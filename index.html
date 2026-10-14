@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0b">
+  <meta name="description" content="Preto Rico — Gestão integrada: Barbearia, Tabacaria & Roupas, Celulares & Acessórios e Estúdio de Tatuagem.">
+  <title>Preto Rico · Gestão</title>
+  <link rel="icon" href="logo.png">
+  <link rel="apple-touch-icon" href="logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- =========================================================
+       TELA DE LOGIN (seleção de usuário + PIN)
+       ========================================================= -->
+  <section id="login" class="login" hidden>
+    <div class="login-box">
+      <img src="logo.png" alt="Preto Rico" class="login-logo">
+      <div id="login-step-user">
+        <h1 class="login-title">Quem é você?</h1>
+        <p class="login-sub">Toque no seu nome para entrar</p>
+        <div id="login-users" class="user-grid"></div>
+      </div>
+      <div id="login-step-pin" hidden>
+        <button type="button" class="btn ghost" id="login-back">← Voltar</button>
+        <h1 class="login-title" id="login-name"></h1>
+        <p class="login-sub">Digite sua senha (PIN)</p>
+        <div id="login-keypad"></div>
+      </div>
+      <div class="login-foot">
+        <span id="login-mode" class="chip"></span>
+        <button type="button" class="btn ghost small" id="login-cfg">⚙️ Configurar servidor</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================
+       APLICAÇÃO
+       ========================================================= -->
+  <div id="app" class="app" hidden>
+
+    <!-- Barra lateral (desktop) / gaveta (celular) -->
+    <aside id="sidebar" class="sidebar">
+      <div class="brand">
+        <img src="logo.png" alt="" class="brand-logo">
+        <div><strong>PRETO RICO</strong><small>Gestão integrada</small></div>
+      </div>
+      <nav id="nav" class="nav" aria-label="Menu principal"></nav>
+      <div class="sidebar-foot">
+        <div class="user-chip" id="user-chip"></div>
+        <button type="button" class="btn ghost block" data-global="theme">🌓 Tema claro/escuro</button>
+        <button type="button" class="btn danger-ghost block" data-global="logout">🚪 Sair</button>
+      </div>
+    </aside>
+    <div class="backdrop" id="backdrop" data-global="menu-close"></div>
+
+    <div class="main-col">
+      <!-- Barra superior -->
+      <header class="topbar">
+        <button type="button" class="icon-btn menu-btn" data-global="menu" aria-label="Abrir menu">☰</button>
+        <img src="logo.png" alt="" class="topbar-logo">
+        <h2 id="topbar-title" class="topbar-title">Início</h2>
+        <button type="button" class="sync-pill" id="sync-status" data-global="sync" title="Sincronizar">●</button>
+      </header>
+
+      <main id="main" class="main">
+
+        <!-- INÍCIO: botões grandes por perfil -->
+        <section class="view" id="view-inicio" data-title="Início" hidden>
+          <div class="view-body"></div>
+        </section>
+
+        <!-- DASHBOARD MASTER -->
+        <section class="view" id="view-dashboard" data-title="Painel Financeiro" hidden>
+          <div class="view-body"></div>
+        </section>
+
+        <!-- BARBEARIA -->
+        <section class="view" id="view-barbearia" data-title="Barbearia" hidden>
+          <div class="tabs" role="tablist">
+            <button type="button" class="tab" data-tab="lancar">✂️ Lançar corte</button>
+            <button type="button" class="tab" data-tab="agenda">📅 Agenda</button>
+            <button type="button" class="tab" data-tab="mensalistas" data-roles="Master">⭐ Mensalistas</button>
+            <button type="button" class="tab" data-tab="relatorio">💵 Comissões</button>
+            <button type="button" class="tab" data-tab="servicos" data-roles="Master">🧾 Serviços e preços</button>
+          </div>
+          <div class="view-body"></div>
+        </section>
+
+        <!-- TABACARIA & ROUPAS -->
+        <section class="view" id="view-tabacaria" data-title="Tabacaria & Roupas" hidden>
+          <div class="tabs" role="tablist">
+            <button type="button" class="tab" data-tab="pdv">🛒 Vender</button>
+            <button type="button" class="tab" data-tab="crediario">📒 Fiado</button>
+            <button type="button" class="tab" data-tab="estoque">📦 Estoque</button>
+            <button type="button" class="tab" data-tab="reposicao" data-roles="Master">🔁 Reposição ABC</button>
+          </div>
+          <div class="view-body"></div>
+        </section>
+
+        <!-- CELULARES & ACESSÓRIOS -->
+        <section class="view" id="view-celulares" data-title="Celulares & Acessórios" hidden>
+          <div class="tabs" role="tablist">
+            <button type="button" class="tab" data-tab="pdv">🛒 Vender</button>
+            <button type="button" class="tab" data-tab="crediario">📒 Fiado</button>
+            <button type="button" class="tab" data-tab="estoque">📦 Estoque</button>
+            <button type="button" class="tab" data-tab="reposicao" data-roles="Master">🔁 Reposição ABC</button>
+          </div>
+          <div class="view-body"></div>
+        </section>
+
+        <!-- ESTÚDIO DE TATUAGEM -->
+        <section class="view" id="view-tatuagem" data-title="Estúdio de Tatuagem" hidden>
+          <div class="tabs" role="tablist">
+            <button type="button" class="tab" data-tab="agenda">📅 Agenda</button>
+            <button type="button" class="tab" data-tab="fechamento">💵 Fechamento</button>
+          </div>
+          <div class="view-body"></div>
+        </section>
+
+        <!-- FINANCEIRO (MASTER) -->
+        <section class="view" id="view-financeiro" data-title="Financeiro" hidden>
+          <div class="tabs" role="tablist">
+            <button type="button" class="tab" data-tab="caixa">🧮 Caixa do dia</button>
+            <button type="button" class="tab" data-tab="contas">📄 Contas a pagar</button>
+            <button type="button" class="tab" data-tab="ofx">🏦 Conciliação OFX</button>
+            <button type="button" class="tab" data-tab="comissoes">🤝 Fechamentos</button>
+          </div>
+          <div class="view-body"></div>
+        </section>
+
+        <!-- CLIENTES -->
+        <section class="view" id="view-clientes" data-title="Clientes" hidden>
+          <div class="view-body"></div>
+        </section>
+
+        <!-- USUÁRIOS (MASTER) -->
+        <section class="view" id="view-usuarios" data-title="Usuários e acessos" hidden>
+          <div class="view-body"></div>
+        </section>
+
+        <!-- CONFIGURAÇÕES (MASTER) -->
+        <section class="view" id="view-config" data-title="Configurações" hidden>
+          <div class="view-body"></div>
+        </section>
+      </main>
+
+      <!-- Navegação inferior (celular) -->
+      <nav id="bottom-nav" class="bottom-nav" aria-label="Atalhos"></nav>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAIS
+       ========================================================= -->
+
+  <!-- Modal genérico (clonado pelo app.js; permite empilhar) -->
+  <template id="tpl-modal">
+    <div class="modal" role="dialog" aria-modal="true">
+      <form class="modal-card" novalidate>
+        <header class="modal-head">
+          <h3 class="modal-title"></h3>
+          <button type="button" class="icon-btn" data-close aria-label="Fechar">✕</button>
+        </header>
+        <div class="modal-body"></div>
+        <footer class="modal-foot"></footer>
+      </form>
+    </div>
+  </template>
+
+  <!-- Modal de PIN Master (autorização de desconto) -->
+  <div class="modal" id="pin-modal" role="dialog" aria-modal="true" hidden>
+    <div class="modal-card modal-sm">
+      <header class="modal-head">
+        <h3 class="modal-title">🔐 <span id="pin-title">Autorização Master</span></h3>
+        <button type="button" class="icon-btn" data-pin-cancel aria-label="Fechar">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="pin-sub" id="pin-sub">Peça para o dono digitar a senha.</p>
+        <div id="pin-keypad"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de recibo / relatório para impressão -->
+  <div class="modal" id="receipt-modal" role="dialog" aria-modal="true" hidden>
+    <div class="modal-card">
+      <header class="modal-head">
+        <h3 class="modal-title">🧾 Recibo</h3>
+        <button type="button" class="icon-btn" data-receipt-close aria-label="Fechar">✕</button>
+      </header>
+      <div class="modal-body receipt-preview">
+        <div id="receipt"></div>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn ghost" data-receipt-close>Fechar</button>
+        <button type="button" class="btn primary big" id="receipt-print">🖨️ Imprimir / PDF</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Avisos rápidos -->
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <!-- Área exclusiva de impressão (@media print) -->
+  <div id="print-area"></div>
+
+  <!-- Sugestões de clientes para campos de nome -->
+  <datalist id="dl-clientes"></datalist>
+
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
