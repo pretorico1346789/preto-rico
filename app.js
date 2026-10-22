@@ -60,11 +60,11 @@ const MODULES = {
 const LEVEL_CAP = {
   Master: Object.keys(MODULES),
   Barbeiro: ['inicio', 'barbearia', 'clientes'],
-  Caixa: ['inicio', 'tabacaria', 'celulares', 'clientes'],
+  Caixa: ['inicio', 'barbearia', 'tabacaria', 'celulares', 'tatuagem', 'clientes'],
   Tatuador: ['inicio', 'tatuagem', 'clientes']
 };
 const LEVELS = Object.keys(LEVEL_CAP);
-const STORE_ACT = { tabacaria: 'Tabacaria', celulares: 'Celulares' };
+const STORE_ACT = { barbearia: 'Barbearia', tabacaria: 'Tabacaria', celulares: 'Celulares', tatuagem: 'Tatuagem' };
 const ACT_LABEL = { Barbearia: 'Barbearia', Tabacaria: 'Tabacaria & Roupas', Celulares: 'Celulares & Acess.', Tatuagem: 'Tatuagem' };
 const PAY = [
   { id: 'Pix', label: 'Pix', icon: '⚡' },
@@ -74,22 +74,22 @@ const PAY = [
 ];
 const payLabel = id => (PAY.find(p => p.id === id) || { label: id || '—' }).label;
 const DEFAULT_SERVICOS = [
-  { nome: 'Corte', preco: 40, comissao: 50 },
-  { nome: 'Barba', preco: 30, comissao: 50 },
-  { nome: 'Corte + Barba', preco: 60, comissao: 50 },
-  { nome: 'Pigmentação', preco: 25, comissao: 40 },
-  { nome: 'Sobrancelha', preco: 15, comissao: 50 }
+  { nome: 'Corte', preco: 40, duracao: 30, comissao: 50 },
+  { nome: 'Barba', preco: 30, duracao: 30, comissao: 50 },
+  { nome: 'Corte + Barba', preco: 60, duracao: 60, comissao: 50 },
+  { nome: 'Pigmentação', preco: 25, duracao: 30, comissao: 40 },
+  { nome: 'Sobrancelha', preco: 15, duracao: 15, comissao: 50 }
 ];
 const STATUS_TONE = {
-  Agendado: 'info', Concluido: 'ok', Cancelado: 'danger', Pendente: 'warn', Pago: 'ok', 'Em dia': 'ok',
+  Agendado: 'info', 'Em andamento': 'warn', Concluido: 'ok', Cancelado: 'danger', Pendente: 'warn', Pago: 'ok', 'Em dia': 'ok',
   Atrasado: 'danger', Aberto: 'warn', Quitado: 'ok', Ativo: 'ok', Inativo: 'muted', A: 'ok', B: 'warn', C: 'muted'
 };
 const STATUS_LABEL = { Concluido: 'Concluído', Crediario: 'Fiado', Cartao: 'Cartão' };
 
 const S = {
   user: null, view: null, tabs: {}, cal: {}, filters: {},
-  cart: { tabacaria: [], celulares: [] }, pay: { tabacaria: 'Pix', celulares: 'Pix' },
-  cli: { tabacaria: '', celulares: '' }, pdvAuth: {}, ofx: null
+  cart: { barbearia: [], tabacaria: [], celulares: [], tatuagem: [] }, pay: { barbearia: 'Pix', tabacaria: 'Pix', celulares: 'Pix', tatuagem: 'Pix' },
+  cli: { barbearia: '', tabacaria: '', celulares: '', tatuagem: '' }, pdvAuth: {}, ofx: null
 };
 
 /* ---------- Acesso a dados ---------- */
@@ -407,6 +407,7 @@ function reportHTML(title, sub, inner, sign = []) {
 
 function showReceipt(html, title = '🧾 Recibo') {
   const m = $('#receipt-modal');
+  document.body.appendChild(m); // fica por cima de outra janela aberta (ex.: pagamentos)
   $('.modal-title', m).textContent = title;
   $('#receipt').innerHTML = html;
   m.hidden = false;
@@ -474,7 +475,7 @@ function serverConfigModal() {
   const c = Api.getCfg();
   formModal({
     title: '⚙️ Servidor (Google Apps Script)',
-    intro: `<p class="muted">Cole a URL da implantação (termina em <b>/exec</b>) e a chave <b>API_SECRET</b> gerada pelo setup(). Deixe em branco para usar o modo local (dados só neste aparelho).</p>`,
+    intro: `<p class="muted">Cole a URL da implantação (termina em <b>/exec</b>) e a chave <b>API_SECRET</b> gerada pelo setup(). Deixe em branco para voltar ao servidor padrão do Preto Rico.</p>`,
     values: c,
     fields: [
       { name: 'url', label: 'URL do App da Web', full: true, placeholder: 'https://script.google.com/macros/s/.../exec' },
@@ -516,7 +517,7 @@ function enterApp() {
 
 function logout() {
   Api.logout();
-  S.cart = { tabacaria: [], celulares: [] };
+  S.cart = { tabacaria: [], celulares: [], tatuagem: [] };
   S.filters = {};
   location.hash = '';
   showLogin();
@@ -625,14 +626,28 @@ function renderInicio(el) {
       + tile('#barbearia/relatorio', '💵', 'Minha comissão', 'Ver quanto já ganhei');
     resumo = kpi('Cortes hoje', feitos.length, 'gold') + kpi('Minha comissão hoje', money(sum(feitos, 'Comissao_Valor')), 'ok');
     if (prox[0]) alerts.push(['info', '⏰', `Próximo: <b>${esc(prox[0].Nome_Cliente)}</b> às ${timeOf(prox[0].DataHora)} — ${esc(prox[0].Servico)}`]);
+    const viaLink = T('Agenda_Barbearia').filter(a => same(a.ID_Barbeiro, S.user.ID) && a.Origem === 'Link' && a.Status === 'Agendado' && dayOf(a.DataHora) >= hoje);
+    if (viaLink.length) alerts.push(['info', '🔗', `<b>${viaLink.length}</b> horário(s) marcados por mensalista no link. <a href="#barbearia/agenda">Ver agenda</a>`]);
   } else if (lvl() === 'Tatuador') {
     const minhas = T('Agenda_Tatuagem').filter(a => same(a.ID_Tatuador, S.user.ID));
     const hojeS = minhas.filter(a => dayOf(a.DataHora) === hoje && a.Status !== 'Cancelado');
     const mes = minhas.filter(a => a.Status === 'Concluido' && monthOf(a.DataHora) === monthOf(hoje));
-    tiles = tile('#tatuagem/agenda', '📅', 'Minha agenda', `${hojeS.length} sessão(ões) hoje`, true)
-      + tile('#tatuagem/fechamento', '💵', 'Meu fechamento', 'Produção e repasse da sala');
-    resumo = kpi('Produzido no mês', money(sum(mes, 'Valor_Total')), 'gold') + kpi('Repasse ao Master', money(sum(mes, 'Comissao_Master')), 'warn');
+    const emAnd = minhas.find(a => a.Status === 'Em andamento');
+    tiles = tile('#tatuagem/agenda', emAnd ? '⏱️' : '📅', emAnd ? 'Serviço em andamento' : 'Minha agenda', emAnd ? `${emAnd.Nome_Cliente} · toque para finalizar` : `${hojeS.length} sessão(ões) hoje`, true)
+      + tile('#tatuagem/pagamentos', '💳', 'Pagamentos', 'Receber e parcelar')
+      + tile('#tatuagem/loja', '🛍️', 'Vender produto', 'Pomadas e cuidados')
+      + tile('#tatuagem/fechamento', '💵', 'Meu fechamento', 'Semana, mês ou período')
+      + tile('#tatuagem/repasses', '🤝', 'Repasses ao Master', 'Comissão do mês')
+      + tile('#tatuagem/avisos', '📲', 'Avisos e link', 'Mandar ao cliente')
+      + tile('#tatuagem/relatorios', '📊', 'Relatórios', 'Trabalhos, tempo e estoque');
+    resumo = kpi('Produzido no mês', money(sum(mes, 'Valor_Total')), 'gold') + kpi('Comissão do Master no mês', money(sum(mes, 'Comissao_Master')), 'warn');
   } else {
+    if (!isMaster() && mods.includes('barbearia')) {
+      tiles += tile('#barbearia/lancar', '✂️', 'Lançar corte', 'Avulso ou mensalista', true)
+        + tile('#barbearia/agenda', '📅', 'Agenda da barbearia', 'Marcar horário com o barbeiro')
+        + tile('#barbearia/mensalistas', '⭐', 'Mensalistas', 'Link, Pix e histórico')
+        + tile('#barbearia/vender', '🛒', 'Vender na barbearia', 'Produtos do balcão');
+    }
     if (mods.includes('tabacaria')) tiles += tile('#tabacaria/pdv', '🛍️', 'Vender Tabacaria / Roupas', 'Abrir o caixa', true);
     if (mods.includes('celulares')) tiles += tile('#celulares/pdv', '📱', 'Vender Celulares', 'Abrir o caixa', true);
     if (isMaster()) {
@@ -646,9 +661,10 @@ function renderInicio(el) {
       if (mods.includes('tabacaria')) tiles += tile('#tabacaria/crediario', '📒', 'Fiado Tabacaria', 'Receber de clientes');
       if (mods.includes('celulares')) tiles += tile('#celulares/crediario', '📒', 'Fiado Celulares', 'Receber de clientes');
       if (mods.includes('tabacaria')) tiles += tile('#tabacaria/estoque', '📦', 'Ver estoque', 'O que tem na loja');
+      if (mods.includes('tatuagem')) tiles += tile('#tatuagem/agenda', '🖋️', 'Agenda da tatuagem', 'Marcar sessão para o tatuador');
       if (mods.includes('clientes')) tiles += tile('#clientes', '👥', 'Clientes', 'Cadastrar cliente');
     }
-    const vendasHoje = T('Vendas_PDV').filter(v => dayOf(v.DataHora) === hoje && (isMaster() || same(v.ID_Usuario, S.user.ID)));
+    const vendasHoje = T('Vendas_PDV').filter(v => dayOf(v.DataHora) === hoje && v.Atividade !== 'Tatuagem' && (isMaster() || same(v.ID_Usuario, S.user.ID)));
     resumo = kpi(isMaster() ? 'Vendas das lojas hoje' : 'Minhas vendas hoje', money(sum(vendasHoje, 'Total_Venda')), 'gold', `${vendasHoje.length} venda(s)`);
     if (isMaster()) {
       const d = computeFinance(hoje, hoje, '');
@@ -663,6 +679,30 @@ function renderInicio(el) {
       const low = T('Estoque').filter(p => stockLevel(p) !== 'ok');
       if (low.length) alerts.push(['warn', '📦', `<b>${low.length}</b> produto(s) acabando. Avise o dono.`]);
     }
+  }
+  if (mods.includes('barbearia') && ['Master', 'Caixa'].includes(lvl())) {
+    const pix = T('Mensal_Pagamentos').filter(x => x.Status === 'Informado');
+    if (pix.length) alerts.unshift(['warn', '💳', `<b>${pix.length}</b> mensalista(s) mandaram o comprovante do Pix: ${money(sum(pix, 'Valor'))}. <a href="#barbearia/mensalistas">Conferir</a>`]);
+    const link = T('Agenda_Barbearia').filter(a => a.Origem === 'Link' && a.Status === 'Agendado' && dayOf(a.DataHora) === hoje);
+    if (link.length) alerts.push(['info', '🔗', `<b>${link.length}</b> horário(s) de hoje marcados pelo mensalista no link. <a href="#barbearia/agenda">Ver agenda</a>`]);
+  }
+  if (mods.includes('tatuagem')) {
+    const av = tatAvisos();
+    if (av.length) alerts.unshift(['danger', '🔔', `<b>${av.length}</b> sessão(ões) de tatuagem alterada(s) por outra pessoa. <a href="#tatuagem/agenda">Ver e dar ciente</a>`]);
+    const ped = tatVisiveis().filter(a => a.Status === 'Solicitado');
+    if (ped.length) alerts.unshift(['warn', '🔗', `<b>${ped.length}</b> pedido(s) de agendamento pelo link com comprovante para conferir. <a href="#tatuagem/agenda">Confirmar</a>`]);
+    if (lvl() === 'Tatuador') {
+      const mesAnt = addMonth(monthOf(hoje), -1);
+      const dev = sum(T('Agenda_Tatuagem').filter(a => same(a.ID_Tatuador, S.user.ID) && a.Status === 'Concluido' && monthOf(a.DataHora) === mesAnt), 'Comissao_Master');
+      const rep = sum(T('Tattoo_Repasses').filter(r => r.Mes === mesAnt && r.Status !== 'Cancelado'), 'Valor');
+      if (dev - rep > 0.009) alerts.push(['warn', '🤝', `Falta repassar <b>${money(dev - rep)}</b> da comissão de ${esc(fmtMonth(mesAnt))} ao Master. <a href="#tatuagem/repasses">Registrar repasse</a>`]);
+    }
+    if (isMaster()) {
+      const inf = T('Tattoo_Repasses').filter(r => r.Status === 'Informado');
+      if (inf.length) alerts.push(['info', '🤝', `<b>${inf.length}</b> repasse(s) de tatuador para confirmar: ${money(sum(inf, 'Valor'))}. <a href="#tatuagem/repasses">Conferir</a>`]);
+    }
+    const venc = T('Tattoo_Pagamentos').filter(p => p.Status === 'Aberto' && p.Vencimento && p.Vencimento < hoje && (lvl() !== 'Tatuador' || same(p.ID_Tatuador, S.user.ID)));
+    if (venc.length) alerts.push(['warn', '💳', `<b>${venc.length}</b> parcela(s) de tatuagem vencida(s): ${money(sum(venc, 'Valor'))}. <a href="#tatuagem/pagamentos">Cobrar</a>`]);
   }
   if (Api.pending()) alerts.push(['warn', '⏳', `${Api.pending()} lançamento(s) aguardando internet para sincronizar.`]);
   if (!alerts.length) alerts.push(['ok', '✅', 'Tudo em ordem por aqui!']);
@@ -685,12 +725,15 @@ function computeFinance(de, ate, act) {
   const acts = { Barbearia: 0, Tabacaria: 0, Celulares: 0, Tatuagem: 0 };
   let bruto = 0, cmv = 0, comissoes = 0;
   const want = a => !act || act === a;
-  T('Vendas_PDV').filter(v => inRange(v.DataHora, de, ate) && want(v.Atividade)).forEach(v => {
+  // Produtos do estúdio de tatuagem são do tatuador: não entram no faturamento do Master
+  T('Vendas_PDV').filter(v => inRange(v.DataHora, de, ate) && want(v.Atividade) && v.Atividade !== 'Tatuagem').forEach(v => {
     bruto += num(v.Total_Venda); cmv += num(v.Preco_Custo_Total); acts[v.Atividade] = (acts[v.Atividade] || 0) + num(v.Total_Venda);
   });
   if (want('Barbearia')) {
+    // Corte de mensalista já entrou na mensalidade: conta só a comissão do barbeiro
     T('Agenda_Barbearia').filter(a => a.Status === 'Concluido' && inRange(a.DataHora, de, ate)).forEach(a => {
-      bruto += num(a.Valor); comissoes += num(a.Comissao_Valor); acts.Barbearia += num(a.Valor);
+      const v = a.Mensalista === 'Sim' ? 0 : num(a.Valor);
+      bruto += v; comissoes += num(a.Comissao_Valor); acts.Barbearia += v;
     });
     T('Recebimentos').filter(r => r.Tipo === 'Mensalidade' && inRange(r.DataHora, de, ate)).forEach(r => { bruto += num(r.Valor); acts.Barbearia += num(r.Valor); });
   }
@@ -758,6 +801,7 @@ function renderDashboard(el) {
    ========================================================================== */
 RENDER.barbearia = {
   lancar: barbLancar, agenda: barbAgenda, mensalistas: barbMensalistas,
+  vender: el => storePDV(el, 'barbearia'), estoque: el => storeEstoque(el, 'barbearia'),
   relatorio: barbRelatorio, servicos: barbServicos
 };
 
@@ -768,6 +812,9 @@ async function saveAgBarb(row) {
   const pctCom = s ? num(s.comissao) : num(cfgVal('comissao_barbeiro_padrao', 50));
   row.ID = row.ID || uid('AB');
   row.Comissao_Valor = r2(num(row.Valor) * pctCom / 100);
+  if (!num(row.Duracao_Min)) row.Duracao_Min = num(s?.duracao) || 30;
+  // Cliente cadastrado como mensalista: o horário entra no histórico dele
+  if (row.Mensalista === undefined && row.ID_Cliente) row.Mensalista = cliente(row.ID_Cliente)?.Tipo === 'Mensalista' ? 'Sim' : '';
   await Api.exec('salvarAgendamento', { tipo: 'barbearia', row });
 }
 
@@ -808,9 +855,11 @@ function agendaBarbForm(row = {}) {
 }
 
 function barbReceipt(a) {
+  const mens = a.Mensalista === 'Sim';
   showReceipt(receiptHTML({
     titulo: 'RECIBO — BARBEARIA', id: a.ID, data: a.DataHora, cliente: a.Nome_Cliente,
-    operador: userName(a.ID_Barbeiro), itens: [[a.Servico, 1, a.Valor]], total: a.Valor
+    operador: userName(a.ID_Barbeiro), itens: [[a.Servico + (mens ? ' (mensalista)' : ''), 1, mens ? 0 : a.Valor]], total: mens ? 0 : a.Valor,
+    extras: mens ? [['Pagamento', 'Incluído na mensalidade']] : undefined
   }));
 }
 
@@ -826,7 +875,7 @@ function agendaItem(a, tipo) {
   return `<div class="ag-item ${esc(a.Status)}">
     <div class="ag-time">${timeOf(a.DataHora)}</div>
     <div>
-      <div class="ag-title">${esc(a.Nome_Cliente)} ${sBadge(a.Status)}</div>
+      <div class="ag-title">${esc(a.Nome_Cliente)} ${sBadge(a.Status)}${bar && a.Mensalista === 'Sim' ? ' ' + badge('⭐ Mensalista', 'gold') : ''}${bar && a.Origem === 'Link' ? ' ' + badge('🔗 Marcou pelo link', 'info') : ''}</div>
       <div class="ag-meta">${bar ? `${esc(a.Servico)} · ${esc(userName(a.ID_Barbeiro))} · <b>${money(a.Valor)}</b>`
         : `${esc(a.Descricao_Servico)} · ${esc(userName(a.ID_Tatuador))} · <b>${money(a.Valor_Total)}</b> · Master ${money(a.Comissao_Master)}`}</div>
       <div class="ag-actions">
@@ -896,13 +945,15 @@ function barbAgenda(el) {
 function barbLancar(el) {
   const isBarb = lvl() === 'Barbeiro';
   const barbers = isBarb ? [S.user] : profs('Barbeiro');
-  const st = S.filters.lancar ||= { barb: '', cliente: '' };
+  const st = S.filters.lancar ||= { barb: '', cliente: '', mensal: false, mensalId: '' };
   if (isBarb) st.barb = S.user.ID;
   if (!st.barb && barbers[0]) st.barb = barbers[0].ID;
   const hoje = isoDate();
+  const mensalistas = clientes().filter(c => c.Tipo === 'Mensalista');
   const cortes = T('Agenda_Barbearia').filter(a => same(a.ID_Barbeiro, st.barb) && dayOf(a.DataHora) === hoje && a.Status === 'Concluido')
     .sort((a, b) => String(b.DataHora).localeCompare(a.DataHora));
   const espera = T('Agenda_Barbearia').filter(a => same(a.ID_Barbeiro, st.barb) && dayOf(a.DataHora) === hoje && a.Status === 'Agendado');
+  const mSel = st.mensal ? cliente(st.mensalId) : null;
 
   el.innerHTML = `
     <div class="kpis">${kpi('Cortes hoje', cortes.length, 'gold')}${kpi('Produzido hoje', money(sum(cortes, 'Valor')))}${kpi(isBarb ? 'Minha comissão hoje' : 'Comissão do barbeiro', money(sum(cortes, 'Comissao_Valor')), 'ok')}</div>
@@ -910,37 +961,60 @@ function barbLancar(el) {
       <h3>1️⃣ Quem atendeu e qual cliente?</h3>
       <div class="form-inline">
         ${!isBarb ? `<label>Barbeiro<select id="lc-barb">${opts(barbers.map(b => [b.ID, b.Nome]), st.barb)}</select></label>` : ''}
-        <label>Nome do cliente (opcional)<input id="lc-cli" list="dl-clientes" value="${esc(st.cliente)}" placeholder="Ex.: João da Silva"></label>
       </div>
+      <div class="cart-section-title">O cliente é mensalista?</div>
+      <div class="choice-grid" style="grid-template-columns:1fr 1fr;max-width:420px">
+        <button type="button" class="choice ${!st.mensal ? 'sel' : ''}" data-act="mensal" data-v="0"><span>👤</span>Não, avulso</button>
+        <button type="button" class="choice ${st.mensal ? 'sel' : ''}" data-act="mensal" data-v="1"><span>⭐</span>Sim, mensalista</button>
+      </div>
+      <div class="form-inline" style="margin-top:.6rem">
+        ${st.mensal
+          ? `<label>Qual mensalista?<select id="lc-mens">${opts([['', '— Escolha o mensalista —'], ...mensalistas.map(c => [c.ID, c.Nome])], st.mensalId)}</select></label>`
+          : `<label>Nome do cliente (opcional)<input id="lc-cli" list="dl-clientes" value="${esc(st.cliente)}" placeholder="Ex.: João da Silva"></label>`}
+      </div>
+      ${mSel ? `<p class="muted small" style="margin-top:.4rem">⭐ O corte entra no histórico de <b>${esc(mSel.Nome)}</b> e não é cobrado no balcão (já está na mensalidade). Mensalidade: ${badge(statusMensal(mSel) === 'Pendente' ? 'A vencer' : statusMensal(mSel), STATUS_TONE[statusMensal(mSel)])}</p>` : ''}
+      ${st.mensal && !mensalistas.length ? '<p class="muted">Nenhum mensalista cadastrado ainda.</p>' : ''}
       <h3>2️⃣ Toque no serviço feito</h3>
       <div class="service-grid">${servicos().map((s, i) => `<button type="button" class="service-btn" data-act="lancar" data-i="${i}">
-        <strong>${esc(s.nome)}</strong><span>${money(s.preco)}</span><small>Comissão ${num(s.comissao)}% = ${money(num(s.preco) * num(s.comissao) / 100)}</small></button>`).join('')}</div>
+        <strong>${esc(s.nome)}</strong><span>${st.mensal ? '⭐ Mensalista' : money(s.preco)}</span><small>Comissão ${num(s.comissao)}% = ${money(num(s.preco) * num(s.comissao) / 100)}</small></button>`).join('')}</div>
     </div>
     ${espera.length ? `<div class="card"><h3>⏰ Clientes agendados hoje</h3><div class="ag-list">${espera.map(a => agendaItem(a, 'barbearia')).join('')}</div></div>` : ''}
     <div class="card"><h3>✅ Lançados hoje</h3>
       ${table([
         { label: 'Hora', html: a => timeOf(a.DataHora) },
-        { label: 'Cliente', html: a => esc(a.Nome_Cliente) },
+        { label: 'Cliente', html: a => esc(a.Nome_Cliente) + (a.Mensalista === 'Sim' ? ' ⭐' : '') },
         { label: 'Serviço', html: a => esc(a.Servico) },
-        { label: 'Valor', cls: 'right', html: a => money(a.Valor) },
+        { label: 'Valor', cls: 'right', html: a => a.Mensalista === 'Sim' ? '<small class="muted">mensalidade</small>' : money(a.Valor) },
         { label: 'Comissão', cls: 'right', html: a => money(a.Comissao_Valor) },
         { label: '', cls: 'actions', html: a => `<button type="button" class="btn small ghost" data-act="recibo" data-id="${esc(a.ID)}">🧾</button><button type="button" class="btn small danger-ghost" data-act="desfazer" data-id="${esc(a.ID)}">Desfazer</button>` }
       ], cortes, { empty: 'Nenhum corte lançado hoje ainda.' })}
     </div>`;
 
-  el.onchange = e => { if (e.target.id === 'lc-barb') { st.barb = e.target.value; barbLancar(el); } };
+  el.onchange = e => {
+    if (e.target.id === 'lc-barb') { st.barb = e.target.value; barbLancar(el); }
+    if (e.target.id === 'lc-mens') { st.mensalId = e.target.value; barbLancar(el); }
+  };
   el.oninput = e => { if (e.target.id === 'lc-cli') st.cliente = e.target.value; };
   const find = id => T('Agenda_Barbearia').find(a => same(a.ID, id));
   bind(el, {
+    mensal: d => { st.mensal = d.v === '1'; barbLancar(el); },
     lancar: async (d, btn) => {
       const s = servicos()[d.i];
       if (!st.barb) return toast('Escolha o barbeiro.', 'warn');
-      const nome = st.cliente.trim() || 'Cliente balcão';
-      const c = T('Clientes').find(x => norm(x.Nome) === norm(nome));
+      let c, nome;
+      if (st.mensal) {
+        c = cliente(st.mensalId);
+        if (!c) return toast('Escolha o mensalista.', 'warn');
+        nome = c.Nome;
+      } else {
+        nome = st.cliente.trim() || 'Cliente balcão';
+        c = T('Clientes').find(x => norm(x.Nome) === norm(nome));
+      }
       btn.disabled = true;
-      const ok = await run(() => saveAgBarb({ DataHora: isoDT(), ID_Barbeiro: st.barb, ID_Cliente: c?.ID || '', Nome_Cliente: c?.Nome || nome, Servico: s.nome, Valor: s.preco, Status: 'Concluido' }),
-        `✔ ${s.nome} lançado para ${c?.Nome || nome}`);
-      if (ok) { st.cliente = ''; barbLancar(el); } else btn.disabled = false;
+      const mensal = st.mensal || c?.Tipo === 'Mensalista';
+      const ok = await run(() => saveAgBarb({ DataHora: isoDT(), ID_Barbeiro: st.barb, ID_Cliente: c?.ID || '', Nome_Cliente: c?.Nome || nome, Servico: s.nome, Valor: s.preco, Status: 'Concluido', Mensalista: mensal ? 'Sim' : '' }),
+        `✔ ${s.nome} lançado para ${c?.Nome || nome}${mensal ? ' (mensalista)' : ''}`);
+      if (ok) { st.cliente = ''; st.mensalId = ''; st.mensal = false; barbLancar(el); } else btn.disabled = false;
     },
     recibo: d => barbReceipt(find(d.id)),
     desfazer: async d => {
@@ -1008,19 +1082,119 @@ function pagarMensalidade(c) {
   });
 }
 
+const MSG_LINK = 'Olá {nome}! 💈 Aqui é da Preto Rico. Este é o seu link de mensalista: por ele você escolhe o barbeiro, vê os horários vagos, marca o seu corte e paga a mensalidade por Pix.';
+
+/** Link pessoal do mensalista (gerado pelo servidor; só funciona com internet). */
+async function linkMensalista(c) {
+  const r = await Api.exec('linkMensalista', { id: c.ID }, { online: true });
+  return new URL(`mensalista.html?c=${encodeURIComponent(r.code)}`, location.href.split('#')[0]).href;
+}
+
+/** Mensagem de WhatsApp para o mensalista, já com o link de agendamento e pagamento. */
+async function mensalWAModal(c, tipo) {
+  let link = '';
+  try { link = await linkMensalista(c); } catch (e) { toast(e.message + ' A mensagem vai sem o link.', 'warn'); }
+  const st = statusMensal(c);
+  const tpl = tipo === 'link' ? MSG_LINK : st === 'Atrasado' ? cfgVal('msg_atraso', MSG_ATRASO) : cfgVal('msg_mensalidade', MSG_MENSAL);
+  let txt = fillTpl(tpl, { nome: String(c.Nome).split(' ')[0], valor: money(c.Valor_Mensalidade), dia: c.Dia_Vencimento, status: st });
+  if (link) txt += `\n\n📅 Marcar horário e 💳 pagar a mensalidade: ${link}`;
+  openModal({
+    title: `📲 Mensagem para ${c.Nome}`,
+    body: `<div class="field"><label for="mw-txt">Mensagem (pode mudar antes de enviar)</label><textarea id="mw-txt" rows="8">${esc(txt)}</textarea></div>
+      ${link ? `<div class="field" style="margin-top:.6rem"><label for="mw-link">Link pessoal do mensalista</label><input id="mw-link" readonly value="${esc(link)}"></div>
+        <p class="muted small">Pelo link ele escolhe o barbeiro, vê os dias e horários vagos e ocupados, marca ou desmarca o horário e paga por Pix enviando o comprovante. O link para de funcionar se ele deixar de ser mensalista.</p>` : ''}
+      ${!c.Telefone_WhatsApp ? '<div class="alert warn"><span class="ic">⚠️</span><div>Cliente sem WhatsApp cadastrado: copie o link e mande por outro meio.</div></div>' : ''}
+      ${!cfgVal('barbearia_pix', {})?.pix ? `<div class="alert warn"><span class="ic">⚠️</span><div>A chave Pix da barbearia ainda não foi cadastrada (Master: <b>Barbearia › Serviços e preços</b>).</div></div>` : ''}`,
+    actions: [
+      ...(link ? [{ label: '📋 Copiar link', cls: 'ghost', onClick: async () => { try { await navigator.clipboard.writeText(link); } catch (e) { $('#mw-link').select(); document.execCommand('copy'); } toast('Link copiado ✔', 'ok'); } }] : []),
+      ...(c.Telefone_WhatsApp ? [{ label: '📲 Enviar no WhatsApp', cls: 'primary big', onClick: (f, close) => { openWA(c.Telefone_WhatsApp, $('#mw-txt').value); close(); } }] : [{ label: 'Fechar', cls: 'primary' }])
+    ]
+  });
+}
+
+/** Histórico do mensalista: cortes (balcão, agenda e link) e mensalidades pagas. */
+function historicoMensal(c) {
+  const desc = (a, b) => String(b.DataHora).localeCompare(String(a.DataHora));
+  const cortes = T('Agenda_Barbearia').filter(a => same(a.ID_Cliente, c.ID)).sort(desc);
+  const feitos = cortes.filter(a => a.Status === 'Concluido');
+  const pags = T('Recebimentos').filter(r => r.Tipo === 'Mensalidade' && same(r.ID_Cliente, c.ID)).sort(desc);
+  const mes = monthOf(isoDate());
+  const body = `<div class="kpis">${kpi('Cortes neste mês', feitos.filter(a => monthOf(a.DataHora) === mes).length, 'gold')}${kpi('Cortes no total', feitos.length)}
+      ${kpi('Último pagamento', fmtDate(c.Ultimo_Pagamento) || '—', STATUS_TONE[statusMensal(c)])}</div>
+    <h3>✂️ Cortes e horários</h3>
+    ${table([
+      { label: 'Data', html: a => fmtDate(a.DataHora) },
+      { label: 'Serviço', html: a => esc(a.Servico) },
+      { label: 'Barbeiro', html: a => esc(userName(a.ID_Barbeiro)) },
+      { label: 'Como', html: a => esc(a.Origem === 'Link' ? 'Pelo link' : a.Origem === 'Balcão' ? 'Balcão' : 'Agenda') },
+      { label: 'Situação', html: a => sBadge(a.Status) }
+    ], cortes, { empty: 'Nenhum corte registrado ainda.' })}
+    <h3 style="margin-top:1rem">💵 Mensalidades pagas</h3>
+    ${table([
+      { label: 'Data', html: r => fmtDate(r.DataHora) },
+      { label: 'Mês', html: r => esc(fmtMonth(r.Referencia || monthOf(r.DataHora))) },
+      { label: 'Valor', cls: 'right', html: r => money(r.Valor) },
+      { label: 'Forma', html: r => esc(payLabel(r.Forma_Pagamento)) }
+    ], pags, { empty: 'Nenhum pagamento registrado.' })}`;
+  openModal({ title: `📜 Histórico — ${c.Nome}`, size: 'lg', body,
+    actions: [{ label: '🖨️ Imprimir', cls: 'ghost', onClick: () => showReceipt(reportHTML(`Histórico do mensalista — ${c.Nome}`, `Mensalidade ${money(c.Valor_Mensalidade)} · vence dia ${c.Dia_Vencimento}`,
+      `<table><tr><th>Data</th><th>Serviço</th><th>Barbeiro</th><th>Situação</th></tr>${cortes.map(a => `<tr><td>${fmtDate(a.DataHora)}</td><td>${esc(a.Servico)}</td><td>${esc(userName(a.ID_Barbeiro))}</td><td>${esc(STATUS_LABEL[a.Status] || a.Status)}</td></tr>`).join('')}</table>
+       <h3>Mensalidades</h3><table><tr><th>Data</th><th>Mês</th><th class="r">Valor</th></tr>${pags.map(r => `<tr><td>${fmtDate(r.DataHora)}</td><td>${esc(fmtMonth(r.Referencia || monthOf(r.DataHora)))}</td><td class="r">${money(r.Valor)}</td></tr>`).join('')}</table>`,
+      [c.Nome, 'Preto Rico']), '🖨️ Histórico') }, { label: 'Fechar', cls: 'primary' }] });
+}
+
+/** Pix enviados pelo link: o balcão confere o comprovante e confirma ou recusa. */
+function conferirPixMensal(pg, aprovar) {
+  const c = cliente(pg.ID_Cliente) || { Nome: pg.Nome_Cliente };
+  formModal({
+    title: aprovar ? `✔ Confirmar Pix — ${pg.Nome_Cliente}` : `✕ Recusar comprovante — ${pg.Nome_Cliente}`,
+    intro: aprovar ? `<p>Confira no extrato do banco se o Pix de <b>${money(pg.Valor)}</b> caiu. Ao confirmar, a mensalidade de <b>${esc(fmtMonth(pg.Referencia))}</b> fica paga.</p>`
+      : '<p>O pagamento não será lançado. Diga ao cliente o motivo.</p>',
+    values: { valor: pg.Valor, motivo: 'O Pix não apareceu no extrato.' },
+    fields: aprovar ? [{ name: 'valor', label: 'Valor que caiu (R$)', type: 'number', step: '0.01', min: 0.01, required: true, full: true, inputmode: 'decimal' }]
+      : [{ name: 'motivo', label: 'Motivo', required: true, full: true }],
+    submitLabel: aprovar ? 'Confirmar pagamento' : 'Recusar',
+    onSubmit: async d => {
+      await Api.exec('conferirPagamentoMensal', { id: pg.ID, aprovar, valor: d.valor, motivo: d.motivo }, { online: true });
+      toast(aprovar ? 'Mensalidade confirmada ✔' : 'Comprovante recusado', aprovar ? 'ok' : 'warn');
+      refresh();
+      const first = String(c.Nome).split(' ')[0];
+      const tel = c.Telefone_WhatsApp;
+      if (tel && await confirmModal('Avisar o cliente no WhatsApp?', { ok: '📲 Avisar' })) {
+        openWA(tel, aprovar ? `Olá ${first}! 💈 Recebemos o seu Pix de ${money(d.valor)}. A mensalidade de ${fmtMonth(pg.Referencia)} está paga. Obrigado!`
+          : `Olá ${first}! 💈 Não conseguimos confirmar o seu Pix da mensalidade de ${fmtMonth(pg.Referencia)}: ${d.motivo} Pode conferir e mandar de novo pelo link?`);
+      }
+    }
+  });
+}
+
 function barbMensalistas(el) {
-  const f = S.filters.mens ||= { st: '' };
+  const f = S.filters.mens ||= { st: '', q: '' };
   const all = T('Clientes').filter(c => c.Tipo === 'Mensalista').map(c => ({ ...c, _st: statusMensal(c) }));
-  const rows = all.filter(c => !f.st || c._st === f.st).sort((a, b) => num(a.Dia_Vencimento) - num(b.Dia_Vencimento));
+  const rows = all.filter(c => (!f.st || c._st === f.st) && (!f.q || norm(c.Nome).includes(norm(f.q)))).sort((a, b) => num(a.Dia_Vencimento) - num(b.Dia_Vencimento));
   const by = s => all.filter(c => c._st === s);
-  el.innerHTML = `<div class="kpis">
+  const pend = T('Mensal_Pagamentos').filter(x => x.Status === 'Informado').sort((a, b) => String(a.DataHora).localeCompare(String(b.DataHora)));
+  const semPix = !cfgVal('barbearia_pix', {})?.pix;
+  el.innerHTML = `${pend.length ? `<div class="card has-aviso"><h3>💳 Pix enviados pelo link — conferir no extrato</h3>
+      ${table([
+        { label: 'Cliente', html: x => `<b>${esc(x.Nome_Cliente)}</b>` },
+        { label: 'Mês', html: x => esc(fmtMonth(x.Referencia)) },
+        { label: 'Valor', cls: 'right', html: x => money(x.Valor) },
+        { label: 'Enviado em', html: x => fmtDate(x.DataHora) },
+        { label: '', cls: 'actions', html: x => `<button type="button" class="btn small ghost" data-act="comp" data-id="${esc(x.ID)}">👁 Comprovante</button>
+          <button type="button" class="btn small ok" data-act="pixOk" data-id="${esc(x.ID)}">✔ Confirmar</button>
+          <button type="button" class="btn small danger-ghost" data-act="pixNao" data-id="${esc(x.ID)}">✕ Recusar</button>` }
+      ], pend)}</div>` : ''}
+    <div class="kpis">
       ${kpi('Mensalistas', all.length, 'gold')}
       ${kpi('Em dia', by('Em dia').length, 'ok', money(sum(by('Em dia'), 'Valor_Mensalidade')))}
       ${kpi('A vencer', by('Pendente').length, 'warn', money(sum(by('Pendente'), 'Valor_Mensalidade')))}
       ${kpi('Atrasados', by('Atrasado').length, 'danger', money(sum(by('Atrasado'), 'Valor_Mensalidade')))}
     </div>
+    ${semPix && isMaster() ? `<div class="alert warn"><span class="ic">⚠️</span><div>Cadastre a chave Pix da barbearia em <a href="#barbearia/servicos">Serviços e preços</a> para o mensalista pagar pelo link.</div></div>` : ''}
     <div class="toolbar">
       <button type="button" class="btn primary" data-act="novo">➕ Novo mensalista</button>
+      <label class="grow">Buscar<input type="search" id="mens-q" value="${esc(f.q)}" placeholder="Nome do mensalista"></label>
       <label>Situação<select data-f="st">${opts([['', 'Todos'], ['Em dia', 'Em dia'], ['Pendente', 'A vencer'], ['Atrasado', 'Atrasado']], f.st)}</select></label>
     </div>
     ${table([
@@ -1032,20 +1206,23 @@ function barbMensalistas(el) {
       { label: 'Situação', html: c => badge(c._st === 'Pendente' ? 'A vencer' : c._st, STATUS_TONE[c._st]) },
       { label: '', cls: 'actions', html: c => `
         ${c._st !== 'Em dia' ? `<button type="button" class="btn small ok" data-act="pagar" data-id="${esc(c.ID)}">💵 Recebi</button>` : ''}
-        <button type="button" class="btn small wa" data-act="wa" data-id="${esc(c.ID)}">Notificar WhatsApp</button>
+        <button type="button" class="btn small" data-act="link" data-id="${esc(c.ID)}">🔗 Link</button>
+        <button type="button" class="btn small ghost" data-act="hist" data-id="${esc(c.ID)}">📜 Histórico</button>
+        <button type="button" class="btn small wa" data-act="wa" data-id="${esc(c.ID)}">Cobrar no WhatsApp</button>
         <button type="button" class="btn small ghost" data-act="editar" data-id="${esc(c.ID)}">✏️</button>` }
     ], rows, { empty: 'Nenhum mensalista cadastrado.' })}`;
+  const pg = id => pend.find(x => same(x.ID, id));
+  el.oninput = e => { if (e.target.id === 'mens-q') { f.q = e.target.value; clearTimeout(el._t); el._t = setTimeout(() => { barbMensalistas(el); const i = $('#mens-q', el); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 300); } };
   bind(el, {
     novo: () => clienteForm({}, { Tipo: 'Mensalista', Atividade_Origem: 'Barbearia' }),
     editar: d => clienteForm(cliente(d.id)),
     pagar: d => pagarMensalidade(cliente(d.id)),
-    wa: d => {
-      const c = cliente(d.id);
-      if (!c.Telefone_WhatsApp) return toast('Cliente sem WhatsApp cadastrado.', 'warn');
-      const st = statusMensal(c);
-      const tpl = st === 'Atrasado' ? cfgVal('msg_atraso', MSG_ATRASO) : cfgVal('msg_mensalidade', MSG_MENSAL);
-      openWA(c.Telefone_WhatsApp, fillTpl(tpl, { nome: c.Nome.split(' ')[0], valor: money(c.Valor_Mensalidade), dia: c.Dia_Vencimento, status: st }));
-    }
+    hist: d => historicoMensal(cliente(d.id)),
+    link: d => mensalWAModal(cliente(d.id), 'link'),
+    wa: d => mensalWAModal(cliente(d.id), 'cobrar'),
+    comp: d => run(() => verComprovante(d.id, 'Mensal_Pagamentos')),
+    pixOk: d => conferirPixMensal(pg(d.id), true),
+    pixNao: d => conferirPixMensal(pg(d.id), false)
   });
   bindFilters(el, f, () => barbMensalistas(el));
 }
@@ -1111,26 +1288,56 @@ async function gerarFechamento(data) {
 }
 
 /* ---------- Serviços e preços ---------- */
+const DEFAULT_HORARIO_BARB = { dias: [1, 2, 3, 4, 5, 6], inicio: '09:00', fim: '20:00' };
+const horarioBarb = () => ({ ...DEFAULT_HORARIO_BARB, ...(cfgVal('horario_barbearia', {}) || {}) });
+
 function barbServicos(el) {
-  const list = S.filters.servEdit ||= servicos().map(s => ({ ...s }));
-  el.innerHTML = `<div class="card"><div class="card-head"><h3>🧾 Serviços, preços e % de comissão do barbeiro</h3></div>
+  const list = S.filters.servEdit ||= servicos().map(s => ({ duracao: 30, ...s }));
+  const pix = { pix: '', titular: '', banco: '', ...(cfgVal('barbearia_pix', {}) || {}) };
+  const h = horarioBarb();
+  el.innerHTML = `<div class="card"><div class="card-head"><h3>🧾 Serviços, preços, tempo e % de comissão do barbeiro</h3></div>
     ${table([
       { label: 'Serviço', html: (s) => `<input data-i="${list.indexOf(s)}" data-k="nome" value="${esc(s.nome)}">` },
       { label: 'Preço (R$)', html: s => `<input type="number" step="0.01" min="0" data-i="${list.indexOf(s)}" data-k="preco" value="${esc(s.preco)}">` },
+      { label: 'Tempo (min)', html: s => `<input type="number" step="5" min="5" data-i="${list.indexOf(s)}" data-k="duracao" value="${esc(s.duracao ?? 30)}">` },
       { label: 'Comissão (%)', html: s => `<input type="number" step="1" min="0" max="100" data-i="${list.indexOf(s)}" data-k="comissao" value="${esc(s.comissao)}">` },
       { label: '', cls: 'actions', html: s => `<button type="button" class="btn small danger-ghost" data-act="rm" data-i="${list.indexOf(s)}">Remover</button>` }
     ], list, { empty: 'Nenhum serviço.' })}
+    <p class="muted small">O tempo de cada serviço é usado para mostrar ao mensalista quais horários estão vagos.</p>
     <div class="btn-row" style="margin-top:1rem">
       <button type="button" class="btn" data-act="add">➕ Adicionar serviço</button>
       <button type="button" class="btn primary big" data-act="salvar">💾 Salvar tabela</button>
-    </div></div>`;
+    </div></div>
+    <div class="card"><div class="card-head"><h3>🔗 Link do mensalista: Pix e horário de atendimento</h3></div>
+      <p class="muted">O mensalista paga a mensalidade por este Pix e marca horário dentro destes dias e horas.</p>
+      <div class="form-grid">
+        <div class="field"><label for="bp-pix">Chave Pix da barbearia</label><input id="bp-pix" value="${esc(pix.pix)}" placeholder="CNPJ, celular, e-mail ou chave aleatória"></div>
+        <div class="field"><label for="bp-tit">Nome de quem recebe</label><input id="bp-tit" value="${esc(pix.titular)}"></div>
+        <div class="field"><label for="bp-banco">Banco</label><input id="bp-banco" value="${esc(pix.banco)}"></div>
+        <div class="field full"><label>Dias de atendimento</label><div class="btn-row">${DIAS_SEMANA.map((n, i) => `<label class="check"><input type="checkbox" class="bp-dia" value="${i}" ${h.dias.map(Number).includes(i) ? 'checked' : ''}> ${n}</label>`).join('')}</div></div>
+        <div class="field"><label for="bp-ini">Abre às</label><input id="bp-ini" type="time" value="${esc(h.inicio)}"></div>
+        <div class="field"><label for="bp-fim">Fecha às</label><input id="bp-fim" type="time" value="${esc(h.fim)}"></div>
+      </div>
+      <div class="btn-row" style="margin-top:1rem"><button type="button" class="btn primary big" data-act="salvarLink">💾 Salvar Pix e horário</button></div>
+    </div>`;
   el.oninput = e => { const i = e.target.dataset.i, k = e.target.dataset.k; if (i != null && k) list[i][k] = k === 'nome' ? e.target.value : num(e.target.value); };
   bind(el, {
-    add: () => { list.push({ nome: 'Novo serviço', preco: 0, comissao: 50 }); barbServicos(el); },
+    add: () => { list.push({ nome: 'Novo serviço', preco: 0, duracao: 30, comissao: 50 }); barbServicos(el); },
     rm: d => { list.splice(Number(d.i), 1); barbServicos(el); },
     salvar: async () => {
-      const clean = list.filter(s => String(s.nome).trim()).map(s => ({ nome: String(s.nome).trim(), preco: num(s.preco), comissao: num(s.comissao) }));
+      const clean = list.filter(s => String(s.nome).trim()).map(s => ({ nome: String(s.nome).trim(), preco: num(s.preco), duracao: Math.max(5, num(s.duracao) || 30), comissao: num(s.comissao) }));
       if (await run(() => Api.exec('salvarConfig', { Chave: 'servicos', Valor: clean }), 'Tabela de serviços salva ✔')) { delete S.filters.servEdit; barbServicos(el); }
+    },
+    salvarLink: async () => {
+      const dias = [...el.querySelectorAll('.bp-dia:checked')].map(x => Number(x.value));
+      const ini = $('#bp-ini', el).value, fim = $('#bp-fim', el).value;
+      if (!dias.length) return toast('Marque ao menos um dia de atendimento.', 'warn');
+      if (!ini || !fim || ini >= fim) return toast('O horário de fechar precisa ser depois do de abrir.', 'warn');
+      const ok = await run(async () => {
+        await Api.exec('salvarConfig', { Chave: 'barbearia_pix', Valor: { pix: $('#bp-pix', el).value.trim(), titular: $('#bp-tit', el).value.trim(), banco: $('#bp-banco', el).value.trim() } });
+        await Api.exec('salvarConfig', { Chave: 'horario_barbearia', Valor: { dias, inicio: ini, fim } });
+      }, 'Pix e horário salvos ✔');
+      if (ok) barbServicos(el);
     }
   });
 }
@@ -1262,7 +1469,7 @@ function cartHTML(view) {
     </div>`).join('')}
     <div class="cart-total"><span>TOTAL</span><strong>${money(total)}</strong></div>
     <div class="cart-section-title">Como o cliente vai pagar?</div>
-    <div class="choice-grid">${PAY.map(p => `<button type="button" class="choice ${pay === p.id ? 'sel' : ''}" data-act="pay" data-pay="${p.id}"><span>${p.icon}</span>${p.label}</button>`).join('')}</div>
+    <div class="choice-grid">${PAY.filter(p => !['tatuagem', 'barbearia'].includes(view) || p.id !== 'Crediario').map(p => `<button type="button" class="choice ${pay === p.id ? 'sel' : ''}" data-act="pay" data-pay="${p.id}"><span>${p.icon}</span>${p.label}</button>`).join('')}</div>
     ${pay === 'Crediario' ? `<div class="cart-section-title">Cliente do fiado</div>
       <select id="pdv-cli">${opts([['', '— Escolha o cliente —'], ...cli.map(c => [c.ID, c.Nome])], S.cli[view])}</select>
       <button type="button" class="btn small ghost" data-act="novoCli" style="margin-top:.4rem">➕ Cadastrar cliente</button>` : ''}
@@ -1417,8 +1624,9 @@ function historicoCrediario(m, act) {
 function storeEstoque(el, view) {
   const act = STORE_ACT[view];
   const f = S.filters['est_' + view] ||= { q: '', st: '' };
-  const master = isMaster();
+  const master = gereLoja(act);
   const all = T('Estoque').filter(p => p.Atividade === act);
+  const tatMaster = isMaster() && act === 'Tatuagem';
   const cnt = s => all.filter(p => stockLevel(p) === s).length;
   el.innerHTML = `<div class="kpis">
       ${kpi('Produtos', all.length, 'gold')}${kpi('OK', cnt('ok'), 'ok')}${kpi('Baixo', cnt('warn'), 'warn')}${kpi('Crítico', cnt('danger'), 'danger')}
@@ -1428,6 +1636,7 @@ function storeEstoque(el, view) {
       ${master ? '<button type="button" class="btn primary" data-act="novo">➕ Novo produto</button>' : ''}
       <label class="grow">Buscar<input type="search" id="est-q" value="${esc(f.q)}" placeholder="Nome do produto"></label>
       <label>Situação<select data-f="st">${opts([['', 'Todas'], ['ok', '🟢 OK'], ['warn', '🟡 Baixo'], ['danger', '🔴 Crítico']], f.st)}</select></label>
+      <button type="button" class="btn" data-act="relEst">🖨️ Relatório de estoque</button>
     </div>
     <div id="est-table"></div>`;
   const draw = () => {
@@ -1436,6 +1645,7 @@ function storeEstoque(el, view) {
       .sort((a, b) => order[stockLevel(a)] - order[stockLevel(b)] || String(a.Produto).localeCompare(b.Produto));
     const cols = [
       { label: 'Produto', html: p => `<b>${esc(p.Produto)}</b>` },
+      ...(tatMaster ? [{ label: 'Tatuador', html: p => esc(p.ID_Dono ? userName(p.ID_Dono) : '—') }] : []),
       { label: 'Qtd', cls: 'right', html: p => num(p.Qtd) },
       { label: 'Mínimo', cls: 'right', html: p => num(p.Minimo) },
       ...(master ? [
@@ -1448,7 +1658,7 @@ function storeEstoque(el, view) {
         <button type="button" class="btn small ok" data-act="entrada" data-id="${esc(p.ID)}">＋ Entrada</button>
         <button type="button" class="btn small" data-act="preco" data-id="${esc(p.ID)}">💲 Preço</button>
         <button type="button" class="btn small ghost" data-act="editar" data-id="${esc(p.ID)}">✏️</button>
-        <button type="button" class="btn small danger-ghost" data-act="excluir" data-id="${esc(p.ID)}">🗑</button>` }] : [])
+        ${isMaster() ? `<button type="button" class="btn small danger-ghost" data-act="excluir" data-id="${esc(p.ID)}">🗑</button>` : ''}` }] : [])
     ];
     $('#est-table', el).innerHTML = table(cols, rows, { empty: 'Nenhum produto.' });
   };
@@ -1456,6 +1666,11 @@ function storeEstoque(el, view) {
   el.oninput = e => { if (e.target.id === 'est-q') { f.q = e.target.value; draw(); } };
   bindFilters(el, f, () => storeEstoque(el, view));
   bind(el, {
+    relEst: () => {
+      const mes = monthOf(isoDate());
+      const ids = new Set(T('Vendas_PDV').filter(v => v.Atividade === act && monthOf(v.DataHora) === mes).map(v => String(v.ID_Venda)));
+      imprimirEstoque(act, T('Vendas_Itens').filter(i => ids.has(String(i.ID_Venda))), fmtMonth(mes));
+    },
     novo: () => produtoForm({ Atividade: act }),
     editar: d => produtoForm(produto(d.id)),
     entrada: d => {
@@ -1477,7 +1692,7 @@ function storeEstoque(el, view) {
           { name: 'Preco_Custo', label: 'Preço de custo (R$)', type: 'number', step: '0.01', min: 0 },
           { name: 'Preco_Venda', label: 'Preço de venda (R$)', type: 'number', step: '0.01', min: 0, required: true }
         ],
-        onSubmit: async x => { await Api.exec('salvarAjustePreco', { ID: p.ID, ...x }); toast('Preço atualizado ✔', 'ok'); refresh(); }
+        onSubmit: async x => { await Api.exec(isMaster() ? 'salvarAjustePreco' : 'atualizarEstoque', isMaster() ? { ID: p.ID, ...x } : { row: { ...p, ...x } }); toast('Preço atualizado ✔', 'ok'); refresh(); }
       });
     },
     excluir: async d => {
@@ -1488,19 +1703,31 @@ function storeEstoque(el, view) {
   });
 }
 
+/** Quem cadastra produtos, preços e estoque: o Master em todas as lojas; o tatuador nos próprios produtos, se o Master permitir. */
+const gereLoja = act => isMaster() || (act === 'Tatuagem' && lvl() === 'Tatuador' && cfgVal('tattoo_produtos_do_tatuador', true) !== false);
+
 function produtoForm(row = {}) {
+  const isTat = lvl() === 'Tatuador';
+  const tats = profs('Tatuador');
+  const donoField = { name: 'ID_Dono', label: 'Tatuador dono do produto', type: 'select', options: [['', '— Escolha —'], ...tats.map(u => [u.ID, u.Nome])], hidden: (row.Atividade || 'Tabacaria') !== 'Tatuagem',
+    help: 'Os produtos do estúdio são do tatuador: a venda fica 100% com ele, sem comissão ao Master.' };
   formModal({
     title: row.ID ? '✏️ Editar produto' : '📦 Novo produto',
-    values: { Qtd: 0, Minimo: 5, ...row },
+    values: { Qtd: 0, Minimo: 5, ...row, ...(isTat ? { Atividade: 'Tatuagem', ID_Dono: S.user.ID } : {}) },
     fields: [
       { name: 'Produto', label: 'Nome do produto', required: true, full: true },
-      { name: 'Atividade', label: 'Loja', type: 'select', options: Object.values(STORE_ACT).map(a => [a, ACT_LABEL[a]]) },
+      { name: 'Atividade', label: 'Loja', type: 'select', options: (isTat ? ['Tatuagem'] : Object.values(STORE_ACT)).map(a => [a, ACT_LABEL[a]]),
+        onInput: (els, form) => { const d = $('[data-field="ID_Dono"]', form); if (d) d.hidden = els.Atividade.value !== 'Tatuagem'; } },
+      ...(isTat ? [] : [donoField]),
       { name: 'Qtd', label: 'Quantidade em estoque', type: 'number', step: '1', min: 0, required: true },
       { name: 'Minimo', label: 'Estoque mínimo', type: 'number', step: '1', min: 0, required: true },
       { name: 'Preco_Custo', label: 'Preço de custo (R$)', type: 'number', step: '0.01', min: 0, required: true },
       { name: 'Preco_Venda', label: 'Preço de venda (R$)', type: 'number', step: '0.01', min: 0, required: true }
     ],
     onSubmit: async d => {
+      if (isTat) Object.assign(d, { Atividade: 'Tatuagem', ID_Dono: S.user.ID });
+      if (d.Atividade !== 'Tatuagem') d.ID_Dono = '';
+      else if (!d.ID_Dono) throw new Error('Escolha o tatuador dono do produto.');
       if (num(d.Preco_Venda) < num(d.Preco_Custo) && !(await confirmModal('O preço de venda está menor que o custo. Salvar mesmo assim?'))) return false;
       await Api.exec('atualizarEstoque', { row: { ...row, ...d, ID: row.ID || uid('P') } });
       toast('Produto salvo ✔', 'ok');
@@ -1574,128 +1801,997 @@ function storeReposicao(el, view) {
 /* ==========================================================================
    10. ESTÚDIO DE TATUAGEM
    ========================================================================== */
-RENDER.tatuagem = { agenda: tatAgenda, fechamento: tatFechamento };
+RENDER.tatuagem = {
+  agenda: tatAgenda, pagamentos: tatPagamentos,
+  loja: el => storePDV(el, 'tatuagem'), estoque: el => storeEstoque(el, 'tatuagem'),
+  avisos: el => tatAvisosCliente(el), repasses: el => tatRepasses(el),
+  fechamento: tatFechamento, relatorios: tatRelatorios, tipos: el => tatTipos(el)
+};
 
 const weekStart = iso => { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d); return addDays(iso, -dt.getDay()); };
 
+/* ---------- Tipos de tatuagem (editáveis pelo Master, salvos em Config › tipos_tatuagem) ---------- */
+const DEFAULT_TIPOS_TATTOO = [
+  { nome: 'Pequena / Fine line', preco: 250, duracao: 60, pct: 30 },
+  { nome: 'Média (até 15 cm)', preco: 500, duracao: 180, pct: 30 },
+  { nome: 'Grande (sessão)', preco: 900, duracao: 300, pct: 30 },
+  { nome: 'Cobertura (cover-up)', preco: 700, duracao: 240, pct: 30 },
+  { nome: 'Retoque', preco: 0, duracao: 60, pct: 0 }
+];
+const tiposTattoo = () => { const t = cfgVal('tipos_tatuagem', null); return Array.isArray(t) && t.length ? t : DEFAULT_TIPOS_TATTOO; };
+const DURACOES = [30, 60, 90, 120, 150, 180, 240, 300, 360, 420, 480, 600];
+const fmtDur = m => { m = Math.round(num(m)); const h = Math.floor(m / 60), r = m % 60; return h ? `${h}h${r ? pad(r) : ''}` : `${r} min`; };
+/** Duração planejada da sessão: campo próprio, senão a do tipo, senão 2 h. */
+const tatDur = a => num(a.Duracao_Min) || num((tiposTattoo().find(t => t.nome === a.Tipo) || {}).duracao) || 120;
+const minOf = s => { const t = timeOf(s) || '00:00'; const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+/** % da sala: Master define na tabela de tipos; sem tipo, vale a % padrão. */
+const pctTipo = nome => { const t = tiposTattoo().find(x => x.nome === nome); return t && t.pct !== '' && t.pct !== undefined ? num(t.pct) : num(cfgVal('comissao_master_tattoo', 30)); };
+
+/* ---------- Situação, avisos e financeiro de cada sessão ---------- */
+const TAT_STATUS = [['Solicitado', 'Pedido pelo link'], ['Agendado', 'Agendado'], ['Em andamento', 'Em andamento'], ['Concluido', 'Executado'], ['Cancelado', 'Cancelado']];
+const TAT_TONE = { Solicitado: 'gold', Agendado: 'info', 'Em andamento': 'warn', Concluido: 'ok', Cancelado: 'danger' };
+const tatBadge = s => badge((TAT_STATUS.find(x => x[0] === s) || [s, s])[1], TAT_TONE[s]);
+const tatCls = s => s === 'Em andamento' ? 'Andamento' : esc(s);
+const listaIds = v => { const a = parseJSON(v, []); return Array.isArray(a) ? a.map(String) : []; };
+/** Aviso para mim: outra pessoa mudou a sessão (data, valor, situação, pagamento) e eu ainda não dei "Ciente". */
+const tatAviso = a => !!a.Alterado_Por && !same(a.Alterado_Por, S.user.ID) && !listaIds(a.Visto_Por).includes(String(S.user.ID));
+const tatVisiveis = () => T('Agenda_Tatuagem').filter(a => lvl() !== 'Tatuador' || same(a.ID_Tatuador, S.user.ID));
+const tatAvisos = () => tatVisiveis().filter(tatAviso);
+const canEditTat = a => isMaster() || lvl() === 'Caixa' || same(a.ID_Tatuador, S.user.ID);
+const pagsSessao = a => T('Tattoo_Pagamentos').filter(p => same(p.ID_Sessao, a.ID) && p.Status !== 'Cancelado');
+function tatFin(a) {
+  const ps = pagsSessao(a);
+  const pago = r2(sum(ps.filter(p => p.Status === 'Pago'), 'Valor'));
+  const aberto = ps.filter(p => p.Status === 'Aberto');
+  const prox = aberto.map(p => p.Vencimento).filter(Boolean).sort()[0] || '';
+  return { pago, saldo: r2(num(a.Valor_Total) - pago), aberto: r2(sum(aberto, 'Valor')), semPlano: r2(num(a.Valor_Total) - pago - sum(aberto, 'Valor')), prox, parcelas: ps };
+}
+const TAT_PAY = PAY.filter(p => p.id !== 'Crediario');
+
 function tatForm(row = {}) {
   const isTat = lvl() === 'Tatuador';
+  const master = isMaster();
   const tats = isTat ? [S.user] : profs('Tatuador');
   if (!tats.length) return toast('Cadastre um tatuador em Usuários primeiro.', 'warn');
-  const pctPadrao = num(cfgVal('comissao_master_tattoo', 30));
+  const tipos = tiposTattoo();
   const valor = num(row.Valor_Total);
-  const pctAtual = valor ? r2(num(row.Comissao_Master) / valor * 100) : pctPadrao;
-  const calc = els => { els.Comissao_Master.value = r2(num(els.Valor_Total.value) * num(els.pct.value) / 100).toFixed(2); };
-  formModal({
+  const pctAtual = valor && row.ID ? r2(num(row.Comissao_Master) / valor * 100) : pctTipo(row.Tipo);
+  const calc = els => {
+    if (master) els.Comissao_Master.value = r2(num(els.Valor_Total.value) * num(els.pct.value) / 100).toFixed(2);
+    else $('#tat-com').textContent = money(r2(num(els.Valor_Total.value) * pctTipo(els.Tipo.value) / 100));
+  };
+  const durOpts = [...new Set([...DURACOES, num(row.Duracao_Min) || 120])].sort((a, b) => a - b).map(m => [String(m), fmtDur(m)]);
+  const tipoOpts = [['', '— Escolha o tipo —'], ...tipos.map(t => t.nome)];
+  if (row.Tipo && !tipos.some(t => t.nome === row.Tipo)) tipoOpts.push(row.Tipo);
+  const m = formModal({
     title: row.ID ? '✏️ Editar sessão' : '🖋️ Nova sessão de tatuagem',
-    values: { Status: 'Agendado', pct: pctAtual, ...row, ID_Tatuador: row.ID_Tatuador || tats[0].ID },
+    intro: row.ID && !master ? '<p class="muted small">Quem estiver na outra ponta (tatuador ou atendente) recebe um aviso se a data, o valor ou a situação mudarem.</p>' : '',
+    values: { Status: 'Agendado', pct: pctAtual, ...row, Duracao_Min: String(tatDur(row)), ID_Tatuador: row.ID_Tatuador || tats[0].ID },
     fields: [
       { name: 'DataHora', label: 'Dia e hora', type: 'datetime-local', required: true },
+      { name: 'Duracao_Min', label: 'Duração prevista', type: 'select', options: durOpts },
       { name: 'ID_Tatuador', label: 'Tatuador', type: 'select', options: tats.map(u => [u.ID, u.Nome]), required: true },
       ...clienteFields(),
+      { name: 'Tipo', label: 'Tipo de tatuagem', type: 'select', options: tipoOpts,
+        onInput: els => {
+          const t = tipos.find(x => x.nome === els.Tipo.value);
+          if (!t) return calc(els);
+          if (num(t.preco)) els.Valor_Total.value = num(t.preco);
+          if (master && t.pct !== undefined && t.pct !== '') els.pct.value = num(t.pct);
+          if (num(t.duracao)) {
+            const v = String(num(t.duracao));
+            if (![...els.Duracao_Min.options].some(o => o.value === v)) els.Duracao_Min.add(new Option(fmtDur(v), v));
+            els.Duracao_Min.value = v;
+          }
+          calc(els);
+        } },
       { name: 'Descricao_Servico', label: 'Descrição (local, tamanho, estilo)', type: 'textarea', full: true, required: true },
-      { name: 'Valor_Total', label: 'Valor total (R$)', type: 'number', step: '0.01', min: 0, required: true, onInput: calc, inputmode: 'decimal' },
-      { name: 'pct', label: '% da sala (Master)', type: 'number', step: '0.1', min: 0, max: 100, onInput: calc },
-      { name: 'Comissao_Master', label: 'Comissão do Master (R$)', type: 'number', step: '0.01', min: 0, required: true, help: 'Valor que o tatuador repassa ao dono da sala.' },
-      { name: 'Status', label: 'Situação', type: 'select', options: ['Agendado', 'Concluido', 'Cancelado'] }
+      { name: 'Valor_Total', label: 'Valor cobrado do cliente (R$)', type: 'number', step: '0.01', min: 0, required: true, onInput: calc, inputmode: 'decimal',
+        help: master ? '' : 'Comissão do Master: <b id="tat-com"></b> (pela tabela de tipos)' },
+      ...(master ? [
+        { name: 'pct', label: '% da sala (Master)', type: 'number', step: '0.1', min: 0, max: 100, onInput: calc },
+        { name: 'Comissao_Master', label: 'Comissão do Master (R$)', type: 'number', step: '0.01', min: 0, required: true, help: 'Devida ao Master dentro do mês, mesmo que o cliente pague a prazo.' }
+      ] : []),
+      { name: 'Status', label: 'Situação', type: 'select', options: TAT_STATUS }
     ],
     onSubmit: async d => {
       const { pct: _p, ...rest } = d;
-      if (num(rest.Comissao_Master) > num(rest.Valor_Total)) throw new Error('A comissão não pode ser maior que o valor total.');
+      if (master && num(rest.Comissao_Master) > num(rest.Valor_Total)) throw new Error('A comissão não pode ser maior que o valor total.');
+      if (!master) rest.Comissao_Master = r2(num(rest.Valor_Total) * pctTipo(rest.Tipo) / 100);
+      rest.Duracao_Min = num(rest.Duracao_Min) || 120;
+      const conflito = T('Agenda_Tatuagem').find(a => !same(a.ID, row.ID) && a.Status !== 'Cancelado' && same(a.ID_Tatuador, rest.ID_Tatuador)
+        && dayOf(a.DataHora) === dayOf(rest.DataHora)
+        && minOf(rest.DataHora) < minOf(a.DataHora) + tatDur(a) && minOf(a.DataHora) < minOf(rest.DataHora) + rest.Duracao_Min);
+      if (conflito && !(await confirmModal(`Este horário bate com a sessão de <b>${esc(conflito.Nome_Cliente)}</b> às ${timeOf(conflito.DataHora)}. Salvar mesmo assim?`, { ok: 'Salvar assim mesmo' }))) return false;
       await Api.exec('salvarAgendamento', { tipo: 'tatuagem', row: { ...row, ...rest, ID: row.ID || uid('AT') } });
       toast('Sessão salva ✔', 'ok');
       refresh();
     }
   });
+  if (m && !master) calc(m.form.elements);
+  // Edição: botão para excluir de vez (só Master; o servidor também confere)
+  if (row.ID && master && m) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn danger-ghost'; b.textContent = '🗑️ Excluir';
+    b.style.marginRight = 'auto';
+    b.onclick = async () => {
+      if (!(await confirmModal('Excluir esta sessão de vez? Para manter o histórico, prefira "Cancelar".', { ok: 'Excluir', cls: 'danger' }))) return;
+      if (await run(() => Api.exec('remove', { table: 'Agenda_Tatuagem', id: row.ID }), 'Sessão excluída')) { m.close(); refresh(); }
+    };
+    $('.modal-foot', m.node).prepend(b);
+  }
+}
+
+/** Cartão de uma sessão com situação, horários reais, financeiro, aviso e ações. */
+function tatItem(a) {
+  const edit = canEditTat(a);
+  const f = tatFin(a);
+  const aviso = tatAviso(a);
+  const c = cliente(a.ID_Cliente);
+  const id = esc(a.ID);
+  const comp = T('Tattoo_Pagamentos').find(p => same(p.ID_Sessao, a.ID) && p.Comprovante && p.Status !== 'Cancelado');
+  const real = [a.Inicio_Real ? `▶ Início ${timeOf(a.Inicio_Real)}` : '', a.Fim_Real ? `■ Fim ${timeOf(a.Fim_Real)}` : '', a.Fim_Real ? `⏱ ${fmtDur(a.Tempo_Min)}` : ''].filter(Boolean).join(' · ');
+  return `<div class="ag-item ${tatCls(a.Status)} ${aviso ? 'has-aviso' : ''}">
+    <div class="ag-time">${timeOf(a.DataHora)}</div>
+    <div>
+      <div class="ag-title">${esc(a.Nome_Cliente)} ${tatBadge(a.Status)} ${a.Menor === 'Sim' ? badge('Menor de idade', 'warn') : ''} ${aviso ? badge('⚠ Alterado', 'danger') : ''}</div>
+      <div class="ag-meta">${a.Tipo ? esc(a.Tipo) + ' · ' : ''}${esc(a.Descricao_Servico)} · ${esc(userName(a.ID_Tatuador))}</div>
+      <div class="ag-meta"><b>${money(a.Valor_Total)}</b> · Master ${money(a.Comissao_Master)} · Recebido ${money(f.pago)}${f.saldo > 0.009 && a.Status !== 'Cancelado' ? ` · <b class="t-danger">Falta ${money(f.saldo)}</b>` : ''}</div>
+      ${real ? `<div class="ag-meta">${real}</div>` : ''}
+      ${a.Alteracao ? `<div class="ag-meta ${aviso ? 't-danger' : 'muted'}">📝 ${esc(a.Alteracao)}${a.Alterado_Em ? ' · ' + fmtDate(a.Alterado_Em) : ''}</div>` : ''}
+      <div class="ag-actions">
+        ${aviso ? `<button type="button" class="btn small primary" data-act="ciente" data-id="${id}">👍 Ciente</button>` : ''}
+        ${a.Status === 'Solicitado' && comp ? `<button type="button" class="btn small" data-act="comprovante" data-id="${esc(comp.ID)}">👁 Comprovante</button>` : ''}
+        ${edit && a.Status === 'Solicitado' ? `<button type="button" class="btn small ok" data-act="confirmar" data-id="${id}">✔ Confirmar sessão</button>
+          <button type="button" class="btn small danger-ghost" data-act="recusar" data-id="${id}">✕ Recusar</button>` : ''}
+        ${edit && a.Status === 'Agendado' ? `<button type="button" class="btn small ok" data-act="iniciar" data-id="${id}">▶ Iniciar</button>` : ''}
+        ${edit && (a.Status === 'Em andamento' || a.Status === 'Agendado') ? `<button type="button" class="btn small ok" data-act="finalizar" data-id="${id}">■ Finalizar</button>` : ''}
+        ${edit && a.Status !== 'Cancelado' ? `<button type="button" class="btn small" data-act="pagar" data-id="${id}">💳 Pagamentos</button>` : ''}
+        ${edit && a.Status === 'Agendado' ? `<button type="button" class="btn small ghost" data-act="cancelar" data-id="${id}">✕ Cancelar</button>` : ''}
+        ${edit ? `<button type="button" class="btn small ghost" data-act="editar" data-id="${id}">✏️ Editar</button>` : ''}
+        ${a.Status === 'Concluido' ? `<button type="button" class="btn small ghost" data-act="recibo" data-id="${id}">🧾 Recibo</button>` : ''}
+        ${['Agendado', 'Solicitado', 'Em andamento'].includes(a.Status) ? `<button type="button" class="btn small wa" data-act="avisosCli" data-id="${id}">📲 Avisos</button>` : ''}
+      </div>
+    </div></div>`;
+}
+
+/** Ações de uma sessão, usadas na agenda, nos pagamentos e nos avisos. */
+function tatAcoes() {
+  const find = id => T('Agenda_Tatuagem').find(a => same(a.ID, id));
+  return {
+    editar: d => tatForm(find(d.id)),
+    iniciar: async d => {
+      if (await run(() => Api.exec('marcarSessao', { id: d.id, evento: 'inicio', quando: isoDT() }), 'Serviço iniciado ▶')) refresh();
+    },
+    finalizar: d => tatFinalizar(find(d.id)),
+    cancelar: async d => {
+      if (await confirmModal('Cancelar esta sessão?', { ok: 'Sim, cancelar', cls: 'danger' })
+        && await run(() => Api.exec('salvarAgendamento', { tipo: 'tatuagem', row: { ...find(d.id), Status: 'Cancelado' } }), 'Sessão cancelada')) refresh();
+    },
+    ciente: async d => { if (await run(() => Api.exec('vistoAviso', { id: d.id }), 'Aviso marcado como visto')) refresh(); },
+    pagar: d => tatPagModal(find(d.id)),
+    recibo: d => {
+      const a = find(d.id);
+      const f = tatFin(a);
+      showReceipt(receiptHTML({ titulo: 'RECIBO — ESTÚDIO DE TATUAGEM', id: a.ID, data: a.DataHora, cliente: a.Nome_Cliente, operador: userName(a.ID_Tatuador),
+        itens: [[a.Tipo ? `${a.Tipo} — ${a.Descricao_Servico}` : a.Descricao_Servico, 1, a.Valor_Total]], total: a.Valor_Total,
+        obs: f.saldo > 0.009 ? `Pago: ${money(f.pago)} · Saldo a pagar: ${money(f.saldo)}` : 'Pago integralmente' }));
+    },
+    wa: d => { const a = find(d.id); openWA(cliente(a.ID_Cliente)?.Telefone_WhatsApp, `Olá ${a.Nome_Cliente}! 🖋️ Confirmando sua sessão de tatuagem na Preto Rico: ${fmtDate(a.DataHora)}. Venha alimentado e hidratado!`); },
+    avisosCli: d => { const a = find(d.id); avisosClienteModal({ tatId: a.ID_Tatuador, sessao: a }); },
+    comprovante: d => run(() => verComprovante(d.id)),
+    confirmar: async d => {
+      const a = find(d.id);
+      const ent = T('Tattoo_Pagamentos').find(p => same(p.ID_Sessao, a.ID) && p.Comprovante && p.Status === 'Aberto');
+      const ok = await confirmModal(`Confirmar a sessão de <b>${esc(a.Nome_Cliente)}</b> em ${fmtDate(a.DataHora)}?${ent ? `<br><br>A entrada de <b>${money(ent.Valor)}</b> será marcada como recebida. Confira o Pix no banco antes.` : ''}`, { ok: '✔ Confirmar' });
+      if (!ok) return;
+      const feito = await run(async () => {
+        await Api.exec('salvarAgendamento', { tipo: 'tatuagem', row: { ...a, Status: 'Agendado' } });
+        if (ent) await Api.exec('salvarPagamentoTattoo', { rows: [{ ...ent, Status: 'Pago', Data_Pagamento: isoDate(), Obs: 'Entrada por Pix (comprovante conferido)' }] });
+        return true;
+      }, 'Sessão confirmada ✔');
+      if (feito) {
+        refresh();
+        const fone = a.Telefone || cliente(a.ID_Cliente)?.Telefone_WhatsApp;
+        if (fone && await confirmModal('Avisar o cliente pelo WhatsApp que a sessão está confirmada?', { ok: '📲 Avisar' }))
+          openWA(fone, `Olá ${String(a.Nome_Cliente).split(' ')[0]}! Sua sessão de tatuagem na Preto Rico está CONFIRMADA ✅ ${fmtDate(a.DataHora)} com ${userName(a.ID_Tatuador)}.${ent ? ` Recebemos a entrada de ${money(ent.Valor)}.` : ''}\n\n${textoAviso(perfilTat(a.ID_Tatuador).textos.falta)}`);
+      }
+    },
+    recusar: d => {
+      const a = find(d.id);
+      const ent = T('Tattoo_Pagamentos').find(p => same(p.ID_Sessao, a.ID) && p.Comprovante && p.Status === 'Aberto');
+      formModal({ title: `✕ Recusar pedido — ${a.Nome_Cliente}`, intro: '<p class="muted">O horário fica livre de novo. Se o cliente já pagou a entrada, combine a devolução com ele.</p>',
+        fields: [{ name: 'motivo', label: 'Motivo (vai na mensagem ao cliente)', full: true, placeholder: 'Ex.: horário indisponível, comprovante não confere' }],
+        submitLabel: 'Recusar pedido',
+        onSubmit: async x => {
+          await Api.exec('salvarAgendamento', { tipo: 'tatuagem', row: { ...a, Status: 'Cancelado' } });
+          if (ent) await Api.exec('salvarPagamentoTattoo', { rows: [{ ...ent, Status: 'Cancelado', Obs: 'Pedido recusado' + (x.motivo ? ': ' + x.motivo : '') }] });
+          toast('Pedido recusado', 'ok'); refresh();
+          const fone = a.Telefone || cliente(a.ID_Cliente)?.Telefone_WhatsApp;
+          if (fone) openWA(fone, `Olá ${String(a.Nome_Cliente).split(' ')[0]}! Não conseguimos confirmar sua sessão de ${fmtDate(a.DataHora)}${x.motivo ? ' (' + x.motivo + ')' : ''}. Chame a gente para escolher outro horário. 🖋️`);
+        } });
+    }
+  };
+}
+
+/** Fim do serviço: confere início e fim e calcula o tempo gasto. */
+function tatFinalizar(a) {
+  formModal({
+    title: `■ Finalizar sessão — ${a.Nome_Cliente}`,
+    intro: '<p class="muted">Confira a hora em que o serviço começou e terminou. O sistema calcula o tempo gasto.</p>',
+    values: { inicio: a.Inicio_Real || a.DataHora, fim: isoDT() },
+    fields: [
+      { name: 'inicio', label: 'Começou', type: 'datetime-local', required: true },
+      { name: 'fim', label: 'Terminou', type: 'datetime-local', required: true }
+    ],
+    submitLabel: '✔ Serviço executado',
+    onSubmit: async x => {
+      if (x.fim < x.inicio) throw new Error('O fim não pode ser antes do início.');
+      await Api.exec('marcarSessao', { id: a.ID, evento: 'fim', inicio: x.inicio, quando: x.fim });
+      toast('Serviço executado ✔', 'ok');
+      refresh();
+      const atual = T('Agenda_Tatuagem').find(s => same(s.ID, a.ID)) || a;
+      if (tatFin(atual).saldo > 0.009) setTimeout(() => tatPagModal(atual), 200);
+    }
+  });
+}
+
+/* ---------- Pagamentos da sessão (à vista ou a prazo) ---------- */
+function tatPagModal(a) {
+  if (!a) return;
+  const f = tatFin(a);
+  const hoje = isoDate();
+  const parcelas = T('Tattoo_Pagamentos').filter(p => same(p.ID_Sessao, a.ID)).sort((x, y) => String(x.Vencimento || x.Data_Pagamento).localeCompare(y.Vencimento || y.Data_Pagamento));
+  const m = openModal({
+    title: `💳 Pagamentos — ${a.Nome_Cliente}`, size: 'lg',
+    body: `<div class="kpis">${kpi('Valor do serviço', money(a.Valor_Total), 'gold')}${kpi('Recebido', money(f.pago), 'ok')}
+        ${kpi('Parcelas a receber', money(f.aberto), 'warn')}${kpi('Sem parcela lançada', money(Math.max(0, f.semPlano)), f.semPlano > 0.009 ? 'danger' : 'default')}</div>
+      <p class="muted small">A comissão do Master (${money(a.Comissao_Master)}) é paga dentro do mês da sessão, mesmo que o cliente pague a prazo.</p>
+      ${table([
+        { label: 'Parcela', html: p => esc(p.Parcela || '—') },
+        { label: 'Vencimento', html: p => p.Vencimento ? `<span class="${p.Status === 'Aberto' && p.Vencimento < hoje ? 't-danger' : ''}">${fmtDate(p.Vencimento)}</span>` : '—' },
+        { label: 'Valor', cls: 'right', html: p => `<b>${money(p.Valor)}</b>` },
+        { label: 'Forma', html: p => esc(payLabel(p.Forma_Pagamento)) },
+        { label: 'Situação', html: p => p.Status === 'Pago' ? badge('Pago ' + fmtDate(p.Data_Pagamento), 'ok') : p.Status === 'Cancelado' ? badge('Cancelado', 'muted') : badge(p.Vencimento && p.Vencimento < hoje ? 'Vencido' : 'A receber', p.Vencimento && p.Vencimento < hoje ? 'danger' : 'warn') },
+        { label: 'Obs.', html: p => esc(p.Obs || '') },
+        { label: '', cls: 'actions', html: p => p.Status === 'Cancelado' ? '' : `
+          ${p.Status === 'Aberto' ? `<button type="button" class="btn small ok" data-act="baixa" data-id="${esc(p.ID)}">✔ Dar baixa</button>` : ''}
+          ${p.Status === 'Pago' ? `<button type="button" class="btn small" data-act="reciboP" data-id="${esc(p.ID)}">🧾 Recibo</button>` : ''}
+          ${p.Comprovante ? `<button type="button" class="btn small" data-act="compP" data-id="${esc(p.ID)}">👁</button>` : ''}
+          <button type="button" class="btn small ghost" data-act="editarP" data-id="${esc(p.ID)}">✏️</button>
+          <button type="button" class="btn small danger-ghost" data-act="cancelarP" data-id="${esc(p.ID)}">✕</button>` }
+      ], parcelas, { empty: 'Nenhum pagamento lançado ainda.' })}
+      <div class="btn-row" style="margin-top:1rem">
+        <button type="button" class="btn primary" data-act="novoP">➕ Lançar pagamento</button>
+        ${f.semPlano > 0.009 ? `<button type="button" class="btn" data-act="parcelar">📆 Parcelar o que falta (${money(f.semPlano)})</button>` : ''}
+      </div>`,
+    actions: [{ label: 'Fechar', cls: 'primary' }]
+  });
+  const reabrir = () => { m.close(); refresh(); const s = T('Agenda_Tatuagem').find(x => same(x.ID, a.ID)); if (s) tatPagModal(s); };
+  const salvar = rows => Api.exec('salvarPagamentoTattoo', { rows: rows.map(r => ({ ID_Sessao: a.ID, ...r })) });
+  const pag = id => parcelas.find(p => same(p.ID, id));
+  const formP = (p = {}) => formModal({
+    title: p.ID ? '✏️ Editar pagamento' : '➕ Lançar pagamento',
+    values: { Status: 'Pago', Forma_Pagamento: 'Pix', Valor: p.ID ? p.Valor : Math.max(0, f.semPlano) || '', Vencimento: hoje, Data_Pagamento: hoje, ...p },
+    fields: [
+      { name: 'Valor', label: 'Valor (R$)', type: 'number', step: '0.01', min: 0.01, required: true, inputmode: 'decimal' },
+      { name: 'Status', label: 'Situação', type: 'select', options: [['Pago', 'Já recebido'], ['Aberto', 'A receber (a prazo)']] },
+      { name: 'Forma_Pagamento', label: 'Forma', type: 'select', options: TAT_PAY.map(x => [x.id, x.label]) },
+      { name: 'Vencimento', label: 'Vencimento (se a prazo)', type: 'date' },
+      { name: 'Data_Pagamento', label: 'Data do recebimento', type: 'date' },
+      { name: 'Parcela', label: 'Parcela (ex.: 1/3, sinal)' },
+      { name: 'Obs', label: 'Observação', full: true }
+    ],
+    onSubmit: async x => {
+      if (x.Status === 'Aberto' && !x.Vencimento) throw new Error('Informe o vencimento da parcela a prazo.');
+      await salvar([{ ...p, ...x, ID: p.ID || uid('TP') }]);
+      toast('Pagamento salvo ✔', 'ok');
+      reabrir();
+    }
+  });
+  bind($('.modal-body', m.node), {
+    novoP: () => formP(),
+    editarP: d => formP(pag(d.id)),
+    reciboP: d => reciboPagamento(pag(d.id)),
+    compP: d => run(() => verComprovante(d.id)),
+    baixa: d => {
+      const p = pag(d.id);
+      formModal({
+        title: `✔ Dar baixa — ${money(p.Valor)}`,
+        values: { Data_Pagamento: hoje, Forma_Pagamento: p.Forma_Pagamento || 'Pix', Valor: p.Valor },
+        fields: [
+          { name: 'Valor', label: 'Valor recebido (R$)', type: 'number', step: '0.01', min: 0.01, required: true, help: 'Se o cliente pagou menos, o restante continua a receber.' },
+          { name: 'Forma_Pagamento', label: 'Forma', type: 'select', options: TAT_PAY.map(x => [x.id, x.label]) },
+          { name: 'Data_Pagamento', label: 'Data', type: 'date', required: true }
+        ],
+        submitLabel: '✔ Confirmar recebimento',
+        onSubmit: async x => {
+          const rows = [{ ...p, ...x, Status: 'Pago' }];
+          const resto = r2(num(p.Valor) - num(x.Valor));
+          if (resto > 0.009) rows.push({ ID: uid('TP'), Parcela: (p.Parcela ? p.Parcela + ' (resto)' : 'Resto'), Vencimento: p.Vencimento || hoje, Valor: resto, Forma_Pagamento: p.Forma_Pagamento, Status: 'Aberto' });
+          await salvar(rows);
+          toast('Recebimento registrado ✔', 'ok');
+          reabrir();
+          const pago = T('Tattoo_Pagamentos').find(x => same(x.ID, p.ID));
+          if (pago && await confirmModal('Recebimento registrado. Emitir o recibo para o cliente?', { ok: '🧾 Emitir recibo' })) reciboPagamento(pago);
+        }
+      });
+    },
+    cancelarP: async d => {
+      if (await confirmModal('Cancelar este pagamento? Ele fica no histórico como cancelado.', { ok: 'Cancelar pagamento', cls: 'danger' })
+        && await run(() => salvar([{ ...pag(d.id), Status: 'Cancelado' }]), 'Pagamento cancelado')) reabrir();
+    },
+    parcelar: () => formModal({
+      title: `📆 Parcelar ${money(f.semPlano)}`,
+      values: { n: 2, primeiro: addDays(hoje, 30), Forma_Pagamento: 'Pix' },
+      fields: [
+        { name: 'n', label: 'Número de parcelas', type: 'number', min: 1, max: 24, step: 1, required: true },
+        { name: 'primeiro', label: 'Primeiro vencimento', type: 'date', required: true },
+        { name: 'Forma_Pagamento', label: 'Forma prevista', type: 'select', options: TAT_PAY.map(x => [x.id, x.label]) }
+      ],
+      onSubmit: async x => {
+        const n = Math.max(1, Math.min(24, Math.round(num(x.n))));
+        const base = Math.floor(f.semPlano / n * 100) / 100;
+        const [y, mo, dd] = x.primeiro.split('-').map(Number);
+        const rows = Array.from({ length: n }, (_, i) => ({
+          ID: uid('TP'), Parcela: `${i + 1}/${n}`, Status: 'Aberto', Forma_Pagamento: x.Forma_Pagamento,
+          Vencimento: isoDate(new Date(y, mo - 1 + i, dd)),
+          Valor: i === n - 1 ? r2(f.semPlano - base * (n - 1)) : base
+        }));
+        await salvar(rows);
+        toast(`${n} parcela(s) lançada(s) ✔`, 'ok');
+        reabrir();
+      }
+    })
+  });
+}
+
+/** Detalhes da sessão (clique no calendário) com as ações de sempre. */
+function tatDetalhe(a, acts) {
+  const m = openModal({ title: '🖋️ Sessão de tatuagem', body: `<div class="ag-list">${tatItem(a)}</div>
+    <p class="muted small" style="margin-top:.6rem">${fmtDate(a.DataHora)} · previsto ${fmtDur(tatDur(a))}${a.Tipo ? ' · ' + esc(a.Tipo) : ''}</p>`,
+    actions: [{ label: 'Fechar', cls: 'ghost' }] });
+  bind($('.modal-body', m.node), Object.fromEntries(Object.entries(acts).map(([k, fn]) => [k, (...x) => { m.close(); fn(...x); }])));
+}
+
+/** Avisos de alteração ainda não vistos (aparece no topo da agenda e na tela Início). */
+function tatAvisosHTML() {
+  const av = tatAvisos().sort((a, b) => String(b.Alterado_Em).localeCompare(a.Alterado_Em));
+  if (!av.length) return '';
+  return `<div class="card aviso-card"><div class="card-head"><h3>🔔 ${av.length} aviso(s) de alteração</h3>
+      <button type="button" class="btn small" data-act="cienteTodos">👍 Ciente de todos</button></div>
+    <div class="ag-list">${av.map(tatItem).join('')}</div></div>`;
 }
 
 function tatAgenda(el) {
-  const st = S.cal.tat ||= { start: weekStart(isoDate()), tat: '' };
+  const st = S.cal.tat ||= { start: weekStart(isoDate()), tat: '', modo: 'calendario' };
+  st.modo ||= 'calendario';
   const isTat = lvl() === 'Tatuador';
-  const rows = T('Agenda_Tatuagem').filter(a => (isTat ? same(a.ID_Tatuador, S.user.ID) : (!st.tat || same(a.ID_Tatuador, st.tat))));
+  const rows = tatVisiveis().filter(a => isTat || !st.tat || same(a.ID_Tatuador, st.tat));
   const dias = Array.from({ length: 7 }, (_, i) => addDays(st.start, i));
   const semana = rows.filter(a => dias.includes(dayOf(a.DataHora)));
   const conc = semana.filter(a => a.Status === 'Concluido');
   const hoje = isoDate();
   const rerender = () => tatAgenda(el);
   const label = d => { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }); };
-  el.innerHTML = `<div class="toolbar">
-      <button type="button" class="btn primary big" data-act="novo">➕ Nova sessão</button>
-      <button type="button" class="icon-btn" data-act="prev">‹</button>
-      <button type="button" class="btn" data-act="hoje">Esta semana</button>
-      <button type="button" class="icon-btn" data-act="next">›</button>
-      ${!isTat ? `<label>Tatuador<select data-f="tat">${opts([['', 'Todos'], ...profs('Tatuador').map(u => [u.ID, u.Nome])], st.tat)}</select></label>` : ''}
-    </div>
-    <div class="kpis">${kpi('Sessões na semana', semana.filter(a => a.Status !== 'Cancelado').length, 'gold')}
-      ${kpi('Produzido (concluídas)', money(sum(conc, 'Valor_Total')), 'ok')}${kpi('Comissão Master', money(sum(conc, 'Comissao_Master')), 'warn')}</div>
-    <div class="week">${dias.map(d => {
+  const fim = addDays(st.start, 6);
+  const titulo = `${fmtDate(st.start)} a ${fmtDate(fim)}`;
+
+  // ---- Calendário semanal por horário ----
+  const SLOT = 30, PX = 26; // 30 min = 26 px
+  let h0 = 8 * 60, h1 = 22 * 60;
+  semana.forEach(a => { const s = minOf(a.DataHora); h0 = Math.min(h0, Math.floor(s / 60) * 60); h1 = Math.max(h1, Math.ceil((s + tatDur(a)) / 60) * 60); });
+  h1 = Math.min(h1, 24 * 60);
+  const altura = (h1 - h0) / SLOT * PX;
+  const blocos = d => {
+    const list = semana.filter(a => dayOf(a.DataHora) === d).sort((a, b) => minOf(a.DataHora) - minOf(b.DataHora));
+    // Sessões que se sobrepõem ficam lado a lado
+    const fins = [], lane = {};
+    list.forEach(a => { const s = minOf(a.DataHora); let i = fins.findIndex(f => f <= s); if (i < 0) { i = fins.length; fins.push(0); } fins[i] = s + tatDur(a); lane[a.ID] = i; });
+    const n = Math.max(1, fins.length);
+    return list.map(a => {
+      const top = (minOf(a.DataHora) - h0) / SLOT * PX, h = Math.max(PX, tatDur(a) / SLOT * PX - 2);
+      const w = 100 / n, left = lane[a.ID] * w;
+      return `<button type="button" class="wk-ev ${tatCls(a.Status)}" data-act="ver" data-id="${esc(a.ID)}"
+        style="top:${top}px;height:${h}px;left:calc(${left}% + 2px);width:calc(${w}% - 4px)" title="${esc(a.Nome_Cliente)} — ${esc(a.Descricao_Servico)}">
+        <b>${tatAviso(a) ? '⚠ ' : ''}${timeOf(a.DataHora)} ${esc(a.Nome_Cliente)}</b><span>${esc(a.Tipo || a.Descricao_Servico)}</span>${!isTat && !st.tat ? `<span>${esc(userName(a.ID_Tatuador))}</span>` : ''}</button>`;
+    }).join('');
+  };
+  const horas = [];
+  for (let t = h0; t < h1; t += 60) horas.push(t);
+  const agoraMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const calendario = `<div class="wk-wrap"><div class="wk" style="--wk-h:${altura}px;--wk-slot:${PX}px">
+      <div class="wk-corner"></div>
+      ${dias.map(d => `<div class="wk-head ${d === hoje ? 'today' : ''}">${label(d)}</div>`).join('')}
+      <div class="wk-times">${horas.map(t => `<div style="height:${PX * 2}px">${pad(t / 60)}:00</div>`).join('')}</div>
+      ${dias.map(d => `<div class="wk-day ${d === hoje ? 'today' : ''}" data-day="${d}" data-act="slot">
+        ${d === hoje && agoraMin >= h0 && agoraMin < h1 ? `<i class="wk-now" style="top:${(agoraMin - h0) / SLOT * PX}px"></i>` : ''}
+        ${blocos(d)}</div>`).join('')}
+    </div></div>
+    <p class="muted small" style="margin-top:.5rem">Toque num horário vazio para agendar · toque numa sessão para iniciar, finalizar, lançar pagamento, editar ou cancelar.</p>`;
+
+  const lista = `<div class="week">${dias.map(d => {
       const list = rows.filter(a => dayOf(a.DataHora) === d).sort((a, b) => String(a.DataHora).localeCompare(b.DataHora));
       return `<div class="week-col ${d === hoje ? 'today' : ''}"><div class="week-head">${label(d)}</div>
-        <div class="ag-list">${list.map(a => agendaItem(a, 'tatuagem')).join('') || '<small class="muted">Livre</small>'}</div></div>`;
+        <div class="ag-list">${list.map(tatItem).join('') || '<small class="muted">Livre</small>'}</div></div>`;
     }).join('')}</div>`;
+
+  el.innerHTML = `${tatAvisosHTML()}<div class="toolbar">
+      <button type="button" class="btn primary big" data-act="novo">➕ Nova sessão</button>
+      <button type="button" class="btn" data-act="link">🔗 Link para o cliente agendar</button>
+      <button type="button" class="icon-btn" data-act="prev" aria-label="Semana anterior">‹</button>
+      <button type="button" class="btn" data-act="hoje">Esta semana</button>
+      <button type="button" class="icon-btn" data-act="next" aria-label="Próxima semana">›</button>
+      <strong class="wk-title">${esc(titulo)}</strong>
+      <label>Ver<select data-f="modo">${opts([['calendario', '📅 Calendário'], ['lista', '📋 Lista']], st.modo)}</select></label>
+      ${!isTat ? `<label>Tatuador<select data-f="tat">${opts([['', 'Todos'], ...profs('Tatuador').map(u => [u.ID, u.Nome])], st.tat)}</select></label>` : ''}
+    </div>
+    ${(() => { const ped = tatVisiveis().filter(a => a.Status === 'Solicitado'); return ped.length ? `<div class="alert warn"><span class="ic">🔗</span><div><b>${ped.length}</b> pedido(s) de agendamento pelo link esperando confirmação: ${ped.map(a => `${esc(a.Nome_Cliente)} (${fmtDate(a.DataHora)})`).join(', ')}. Confira o comprovante e confirme.</div></div>` : ''; })()}
+    <div class="kpis">${kpi('Sessões na semana', semana.filter(a => a.Status !== 'Cancelado').length, 'gold')}
+      ${kpi('Em andamento', semana.filter(a => a.Status === 'Em andamento').length, 'warn')}
+      ${kpi('Produzido (executadas)', money(sum(conc, 'Valor_Total')), 'ok')}${kpi('Comissão Master', money(sum(conc, 'Comissao_Master')), 'info')}</div>
+    ${st.modo === 'lista' ? lista : calendario}`;
+
   const find = id => T('Agenda_Tatuagem').find(a => same(a.ID, id));
+  const acoes = tatAcoes();
   bind(el, {
-    novo: () => tatForm({ DataHora: (dias.includes(hoje) ? hoje : st.start) + 'T14:00' }),
+    ...acoes,
+    cienteTodos: async () => {
+      const ok = await run(async () => { for (const a of tatAvisos()) await Api.exec('vistoAviso', { id: a.ID }); return true; }, 'Avisos marcados como vistos');
+      if (ok) refresh();
+    },
+    novo: () => tatForm({ DataHora: (dias.includes(hoje) ? hoje : st.start) + 'T14:00', ID_Tatuador: isTat ? S.user.ID : st.tat || undefined }),
+    link: () => linkAgendamentoModal(isTat ? S.user.ID : st.tat),
     prev: () => { st.start = addDays(st.start, -7); rerender(); },
     next: () => { st.start = addDays(st.start, 7); rerender(); },
     hoje: () => { st.start = weekStart(hoje); rerender(); },
-    editar: d => tatForm(find(d.id)),
-    concluir: d => setAgStatus('tatuagem', find(d.id), 'Concluido'),
-    cancelar: async d => { if (await confirmModal('Cancelar esta sessão?', { ok: 'Sim, cancelar', cls: 'danger' })) setAgStatus('tatuagem', find(d.id), 'Cancelado'); },
-    recibo: d => {
-      const a = find(d.id);
-      showReceipt(receiptHTML({ titulo: 'RECIBO — ESTÚDIO DE TATUAGEM', id: a.ID, data: a.DataHora, cliente: a.Nome_Cliente, operador: userName(a.ID_Tatuador),
-        itens: [[a.Descricao_Servico, 1, a.Valor_Total]], total: a.Valor_Total }));
-    },
-    wa: d => { const a = find(d.id); openWA(cliente(a.ID_Cliente)?.Telefone_WhatsApp, `Olá ${a.Nome_Cliente}! 🖋️ Confirmando sua sessão de tatuagem na Preto Rico: ${fmtDate(a.DataHora)}. Venha alimentado e hidratado!`); }
+    ver: d => { const a = find(d.id); if (a) tatDetalhe(a, acoes); },
+    slot: (d, b, e) => {
+      const y = e.clientY - b.getBoundingClientRect().top;
+      const t = Math.min(h1 - SLOT, h0 + Math.max(0, Math.floor(y / PX)) * SLOT);
+      tatForm({ DataHora: `${d.day}T${pad(Math.floor(t / 60))}:${pad(t % 60)}`, ID_Tatuador: isTat ? S.user.ID : st.tat || undefined });
+    }
   });
   bindFilters(el, st, rerender);
+  // Rola até o dia de hoje no celular
+  const wrap = $('.wk-wrap', el);
+  if (wrap && window.matchMedia('(max-width: 900px)').matches) {
+    const iHoje = dias.indexOf(hoje);
+    if (iHoje > 0) wrap.scrollLeft = iHoje * ($('.wk-day', el)?.offsetWidth || 0);
+  }
 }
+
+/* ---------- Aba Pagamentos: o que cada cliente ainda deve ---------- */
+function tatPagamentos(el) {
+  const f = S.filters.tatPag ||= { so: 'saldo', tat: '' };
+  const isTat = lvl() === 'Tatuador';
+  const hoje = isoDate();
+  const sess = tatVisiveis().filter(a => a.Status !== 'Cancelado' && (isTat || !f.tat || same(a.ID_Tatuador, f.tat)))
+    .map(a => ({ a, f: tatFin(a) }))
+    .filter(x => f.so === 'todas' || x.f.saldo > 0.009)
+    .sort((x, y) => String(x.f.prox || x.a.DataHora).localeCompare(y.f.prox || y.a.DataHora));
+  const parcAbertas = T('Tattoo_Pagamentos').filter(p => p.Status === 'Aberto' && (isTat ? same(p.ID_Tatuador, S.user.ID) : !f.tat || same(p.ID_Tatuador, f.tat)));
+  const vencidas = parcAbertas.filter(p => p.Vencimento && p.Vencimento < hoje);
+  const recebMes = T('Tattoo_Pagamentos').filter(p => p.Status === 'Pago' && monthOf(p.Data_Pagamento) === monthOf(hoje) && (isTat ? same(p.ID_Tatuador, S.user.ID) : !f.tat || same(p.ID_Tatuador, f.tat)));
+  el.innerHTML = `<div class="kpis">${kpi('A receber dos clientes', money(sum(sess.filter(x => x.f.saldo > 0), x => x.f.saldo)), 'warn')}
+      ${kpi('Parcelas vencidas', `${vencidas.length} · ${money(sum(vencidas, 'Valor'))}`, vencidas.length ? 'danger' : 'ok')}
+      ${kpi('Recebido neste mês', money(sum(recebMes, 'Valor')), 'ok')}</div>
+    <div class="toolbar">
+      <label>Mostrar<select data-f="so">${opts([['saldo', 'Só quem deve'], ['todas', 'Todas as sessões']], f.so)}</select></label>
+      ${!isTat ? `<label>Tatuador<select data-f="tat">${opts([['', 'Todos'], ...profs('Tatuador').map(u => [u.ID, u.Nome])], f.tat)}</select></label>` : ''}
+    </div>
+    <div class="card">${table([
+      { label: 'Sessão', html: x => fmtDate(x.a.DataHora) },
+      { label: 'Cliente', html: x => `<b>${esc(x.a.Nome_Cliente)}</b>${tatAviso(x.a) ? ' ' + badge('⚠', 'danger') : ''}` },
+      ...(!isTat ? [{ label: 'Tatuador', html: x => esc(userName(x.a.ID_Tatuador)) }] : []),
+      { label: 'Situação', html: x => tatBadge(x.a.Status) },
+      { label: 'Valor', cls: 'right', html: x => money(x.a.Valor_Total) },
+      { label: 'Recebido', cls: 'right', html: x => money(x.f.pago) },
+      { label: 'Falta', cls: 'right', html: x => x.f.saldo > 0.009 ? `<b class="t-danger">${money(x.f.saldo)}</b>` : badge('Quitado', 'ok') },
+      { label: 'Próx. vencimento', html: x => x.f.prox ? `<span class="${x.f.prox < hoje ? 't-danger' : ''}">${fmtDate(x.f.prox)}</span>` : '—' },
+      { label: '', cls: 'actions', html: x => canEditTat(x.a) ? `<button type="button" class="btn small primary" data-act="pagar" data-id="${esc(x.a.ID)}">💳 Pagamentos</button>` : '' }
+    ], sess, { empty: f.so === 'saldo' ? 'Nenhum cliente devendo. 🎉' : 'Nenhuma sessão.' })}</div>`;
+  bind(el, tatAcoes());
+  bindFilters(el, f, () => tatPagamentos(el));
+}
+
+/* ---------- Período (semana, mês ou datas) usado no fechamento e nos relatórios ---------- */
+function tatPeriodo(f) {
+  if (f.modo === 'semana') return { de: f.sem, ate: addDays(f.sem, 6), nome: `Semana de ${fmtDate(f.sem)} a ${fmtDate(addDays(f.sem, 6))}`, chave: `${f.sem} a ${addDays(f.sem, 6)}` };
+  if (f.modo === 'mes') return { de: f.mes + '-01', ate: monthEnd(f.mes), nome: fmtMonth(f.mes), chave: f.mes };
+  const de = f.de <= f.ate ? f.de : f.ate, ate = f.de <= f.ate ? f.ate : f.de;
+  return { de, ate, nome: `${fmtDate(de)} a ${fmtDate(ate)}`, chave: `${de} a ${ate}` };
+}
+function tatPeriodoBar(f, extra = '', rotulo = 'Fechamento') {
+  return `<div class="toolbar">
+    <label>${rotulo}<select data-f="modo">${opts([['semana', 'Semanal'], ['mes', 'Mensal'], ['periodo', 'Por período (datas)']], f.modo)}</select></label>
+    ${f.modo === 'semana' ? `<button type="button" class="icon-btn" data-act="semPrev" aria-label="Semana anterior">‹</button>
+        <strong class="wk-title">${fmtDate(f.sem)} a ${fmtDate(addDays(f.sem, 6))}</strong>
+        <button type="button" class="icon-btn" data-act="semNext" aria-label="Próxima semana">›</button>`
+      : f.modo === 'mes' ? `<label>Mês<input type="month" data-f="mes" value="${esc(f.mes)}"></label>`
+      : `<label>De<input type="date" data-f="de" value="${esc(f.de)}"></label><label>Até<input type="date" data-f="ate" value="${esc(f.ate)}"></label>`}
+    ${extra}</div>`;
+}
+const tatPeriodoActs = (f, rerender) => ({
+  semPrev: () => { f.sem = addDays(f.sem, -7); rerender(); },
+  semNext: () => { f.sem = addDays(f.sem, 7); rerender(); }
+});
+const novoFiltroTat = () => ({ modo: 'semana', sem: weekStart(isoDate()), mes: monthOf(isoDate()), de: monthStart(), ate: isoDate(), tat: '', tipo: '', st: 'Concluido' });
+const inPer = (s, p) => { const d = dayOf(s); return d >= p.de && d <= p.ate; };
 
 function tatFechamento(el) {
   const isTat = lvl() === 'Tatuador';
-  const f = S.filters.tatF ||= { modo: 'mes', dia: isoDate(), mes: monthOf(isoDate()), tat: '' };
+  const f = S.filters.tatF ||= novoFiltroTat();
   if (isTat) f.tat = S.user.ID;
-  const match = a => a.Status === 'Concluido' && (f.modo === 'dia' ? dayOf(a.DataHora) === f.dia : monthOf(a.DataHora) === f.mes) && (!f.tat || same(a.ID_Tatuador, f.tat));
-  const rows = T('Agenda_Tatuagem').filter(match);
-  const per = f.modo === 'dia' ? fmtDate(f.dia) : fmtMonth(f.mes);
-  const periodoKey = f.modo === 'dia' ? f.dia : f.mes;
-  const grupos = Object.entries(groupBy(rows, a => a.ID_Tatuador)).map(([id, list]) => ({ id, list, prod: sum(list, 'Valor_Total'), master: sum(list, 'Comissao_Master') }));
+  const per = tatPeriodo(f);
+  const rows = T('Agenda_Tatuagem').filter(a => a.Status === 'Concluido' && inPer(a.DataHora, per) && (!f.tat || same(a.ID_Tatuador, f.tat)));
+  const grupos = Object.entries(groupBy(rows, a => a.ID_Tatuador)).map(([id, list]) => {
+    const fins = list.map(tatFin);
+    return { id, list, prod: sum(list, 'Valor_Total'), master: sum(list, 'Comissao_Master'), pago: sum(fins, 'pago'), falta: sum(fins, x => Math.max(0, x.saldo)), tempo: sum(list, 'Tempo_Min') };
+  });
   const rerender = () => tatFechamento(el);
   const meus = T('Fechamento_Comissoes').filter(x => x.Atividade === 'Tatuagem' && (!f.tat || same(x.ID_Profissional, f.tat)));
-  el.innerHTML = `<div class="toolbar">
-      <label>Tipo<select data-f="modo">${opts([['dia', 'Fechamento diário'], ['mes', 'Fechamento mensal']], f.modo)}</select></label>
-      ${f.modo === 'dia' ? `<label>Dia<input type="date" data-f="dia" value="${esc(f.dia)}"></label>` : `<label>Mês<input type="month" data-f="mes" value="${esc(f.mes)}"></label>`}
-      ${!isTat ? `<label>Tatuador<select data-f="tat">${opts([['', 'Todos'], ...profs('Tatuador').map(u => [u.ID, u.Nome])], f.tat)}</select></label>` : ''}
-    </div>
-    ${grupos.map(g => `<div class="card"><div class="card-head"><h3>🖋️ ${esc(userName(g.id))} — ${esc(per)}</h3>
+  el.innerHTML = `${tatPeriodoBar(f, !isTat ? `<label>Tatuador<select data-f="tat">${opts([['', 'Todos'], ...profs('Tatuador').map(u => [u.ID, u.Nome])], f.tat)}</select></label>` : '')}
+    <div class="alert info"><span class="ic">ℹ️</span><div>A comissão do Master é devida dentro do mês da sessão, mesmo que o cliente pague a prazo. "A receber" é o que os clientes ainda devem ao tatuador.</div></div>
+    ${grupos.map(g => `<div class="card"><div class="card-head"><h3>🖋️ ${esc(userName(g.id))} — ${esc(per.nome)}</h3>
         <div class="btn-row"><button type="button" class="btn small" data-act="imprimir" data-id="${esc(g.id)}">🖨️ Imprimir</button>
         ${isMaster() ? `<button type="button" class="btn small primary" data-act="fechar" data-id="${esc(g.id)}">Gerar fechamento</button>` : ''}</div></div>
-      <div class="kpis">${kpi('Sessões', g.list.length, 'gold')}${kpi('Total produzido', money(g.prod))}${kpi('Repassar ao Master', money(g.master), 'warn')}${kpi('Fica com o tatuador', money(g.prod - g.master), 'ok')}</div>
+      <div class="kpis">${kpi('Sessões executadas', g.list.length, 'gold', fmtDur(g.tempo) + ' trabalhadas')}${kpi('Total cobrado', money(g.prod))}
+        ${kpi('Comissão do Master', money(g.master), 'warn', 'pagar dentro do mês')}${kpi('Fica com o tatuador', money(g.prod - g.master), 'ok')}
+        ${kpi('Já recebido dos clientes', money(g.pago), 'info')}${kpi('Clientes ainda devem', money(g.falta), g.falta > 0.009 ? 'danger' : 'default')}</div>
       ${table([
         { label: 'Data', html: a => fmtDate(a.DataHora) },
         { label: 'Cliente', html: a => esc(a.Nome_Cliente) },
-        { label: 'Serviço', html: a => esc(a.Descricao_Servico) },
+        { label: 'Tipo', html: a => esc(a.Tipo || '—') },
+        { label: 'Tempo', cls: 'right', html: a => a.Tempo_Min !== '' && a.Tempo_Min !== undefined ? fmtDur(a.Tempo_Min) : '—' },
         { label: 'Valor', cls: 'right', html: a => money(a.Valor_Total) },
+        { label: 'Recebido', cls: 'right', html: a => money(tatFin(a).pago) },
         { label: 'Master', cls: 'right', html: a => money(a.Comissao_Master) }
-      ], g.list)}</div>`).join('') || '<div class="empty">Nenhuma sessão concluída no período.</div>'}
+      ], g.list)}</div>`).join('') || '<div class="empty">Nenhuma sessão executada no período.</div>'}
     <div class="card"><h3>📋 Fechamentos registrados</h3>${fechTable(meus)}</div>`;
   bind(el, {
+    ...tatPeriodoActs(f, rerender),
     imprimir: d => {
       const g = grupos.find(x => same(x.id, d.id));
-      showReceipt(reportHTML(`Fechamento Tatuagem — ${userName(g.id)}`, `Período: ${per}`,
-        `<table><tr><th>Data</th><th>Cliente</th><th>Serviço</th><th class="r">Valor</th><th class="r">Master</th></tr>
-        ${g.list.map(a => `<tr><td>${fmtDate(a.DataHora)}</td><td>${esc(a.Nome_Cliente)}</td><td>${esc(a.Descricao_Servico)}</td><td class="r">${money(a.Valor_Total)}</td><td class="r">${money(a.Comissao_Master)}</td></tr>`).join('')}
-        <tr><th colspan="3">TOTAIS</th><th class="r">${money(g.prod)}</th><th class="r">${money(g.master)}</th></tr></table>
-        <p><b>Repasse ao Master: ${money(g.master)}</b> · Líquido do tatuador: ${money(g.prod - g.master)}</p>`, [userName(g.id), 'Preto Rico (Master)']), '🖨️ Fechamento');
+      showReceipt(reportHTML(`Fechamento Tatuagem — ${userName(g.id)}`, `Período: ${per.nome}`,
+        `<table><tr><th>Data</th><th>Cliente</th><th>Tipo</th><th class="r">Tempo</th><th class="r">Valor</th><th class="r">Recebido</th><th class="r">Master</th></tr>
+        ${g.list.map(a => `<tr><td>${fmtDate(a.DataHora)}</td><td>${esc(a.Nome_Cliente)}</td><td>${esc(a.Tipo || a.Descricao_Servico)}</td><td class="r">${a.Tempo_Min ? fmtDur(a.Tempo_Min) : '—'}</td><td class="r">${money(a.Valor_Total)}</td><td class="r">${money(tatFin(a).pago)}</td><td class="r">${money(a.Comissao_Master)}</td></tr>`).join('')}
+        <tr><th colspan="3">TOTAIS (${g.list.length} sessões)</th><th class="r">${fmtDur(g.tempo)}</th><th class="r">${money(g.prod)}</th><th class="r">${money(g.pago)}</th><th class="r">${money(g.master)}</th></tr></table>
+        <p><b>Comissão do Master: ${money(g.master)}</b> (pagar dentro do mês) · Líquido do tatuador: ${money(g.prod - g.master)} · Clientes ainda devem: ${money(g.falta)}</p>`, [userName(g.id), 'Preto Rico (Master)']), '🖨️ Fechamento');
     },
     fechar: d => {
       const g = grupos.find(x => same(x.id, d.id));
-      gerarFechamento({ Data: periodoKey, ID_Profissional: g.id, Atividade: 'Tatuagem', Total_Produzido: r2(g.prod), Valor_Comissao: r2(g.prod - g.master), Valor_Master: r2(g.master) });
+      gerarFechamento({ Data: per.chave, ID_Profissional: g.id, Atividade: 'Tatuagem', Total_Produzido: r2(g.prod), Valor_Comissao: r2(g.prod - g.master), Valor_Master: r2(g.master) });
     },
     pago: d => marcarFechPago(d.id)
   });
   bindFilters(el, f, rerender);
+}
+
+/* ---------- Relatórios gerenciais (Master e tatuador) ---------- */
+function baixarArquivo(nome, texto, tipo = 'text/csv;charset=utf-8') {
+  const blob = new Blob([tipo.startsWith('text/csv') ? '﻿' + texto : texto], { type: tipo });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: nome });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const csvLinha = cols => cols.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';');
+const csvNum = n => r2(num(n)).toFixed(2).replace('.', ',');
+
+function tatRelatorios(el) {
+  const isTat = lvl() === 'Tatuador';
+  const master = isMaster();
+  const f = S.filters.tatR ||= { ...novoFiltroTat(), modo: 'semana' };
+  if (isTat) f.tat = S.user.ID;
+  const per = tatPeriodo(f);
+  const sess = T('Agenda_Tatuagem').filter(a => inPer(a.DataHora, per) && (!f.tat || same(a.ID_Tatuador, f.tat))
+    && (!f.tipo || a.Tipo === f.tipo) && (!f.st || a.Status === f.st))
+    .sort((a, b) => String(a.DataHora).localeCompare(b.DataHora));
+  const linhas = sess.map(a => ({ a, f: tatFin(a), tempo: num(a.Tempo_Min) }));
+  const porTipo = Object.entries(groupBy(linhas, x => x.a.Tipo || 'Sem tipo')).map(([tipo, l]) => ({
+    tipo, n: l.length, valor: sum(l, x => x.a.Valor_Total), com: sum(l, x => x.a.Comissao_Master), tempo: sum(l, 'tempo'),
+    medio: l.filter(x => x.tempo).length ? sum(l, 'tempo') / l.filter(x => x.tempo).length : 0
+  })).sort((a, b) => b.valor - a.valor);
+  // Estatística de tempo por tipo: todas as sessões executadas com início e fim lançados
+  const prevTipo = nome => num((tiposTattoo().find(t => t.nome === nome) || {}).duracao);
+  const estTempo = Object.entries(groupBy(T('Agenda_Tatuagem').filter(a => a.Status === 'Concluido' && num(a.Tempo_Min) > 0 && (!f.tat || same(a.ID_Tatuador, f.tat))), a => a.Tipo || 'Sem tipo'))
+    .map(([tipo, l]) => { const ts = l.map(a => num(a.Tempo_Min)); const med = sum(ts, x => x) / ts.length; return { tipo, n: l.length, med, min: Math.min(...ts), max: Math.max(...ts), prev: prevTipo(tipo), porHora: sum(l, 'Valor_Total') / (sum(ts, x => x) / 60) }; })
+    .sort((a, b) => b.n - a.n);
+  // Loja do estúdio
+  const vendas = T('Vendas_PDV').filter(v => v.Atividade === 'Tatuagem' && inPer(v.DataHora, per) && (!f.tat || same(v.ID_Usuario, f.tat)));
+  const idsV = new Set(vendas.map(v => String(v.ID_Venda)));
+  const itens = T('Vendas_Itens').filter(i => idsV.has(String(i.ID_Venda)));
+  const tot = { n: linhas.length, valor: sum(linhas, x => x.a.Valor_Total), com: sum(linhas, x => x.a.Comissao_Master), pago: sum(linhas, x => x.f.pago), falta: sum(linhas, x => Math.max(0, x.f.saldo)), tempo: sum(linhas, 'tempo') };
+  const rerender = () => tatRelatorios(el);
+  const colsTrab = [
+    { label: 'Data e hora', html: x => fmtDate(x.a.DataHora) },
+    ...(!isTat ? [{ label: 'Tatuador', html: x => esc(userName(x.a.ID_Tatuador)) }] : []),
+    { label: 'Cliente', html: x => esc(x.a.Nome_Cliente) },
+    { label: 'Tipo de serviço', html: x => esc(x.a.Tipo || '—') },
+    { label: 'Situação', html: x => tatBadge(x.a.Status) },
+    { label: 'Valor cobrado', cls: 'right', html: x => money(x.a.Valor_Total) },
+    { label: 'Comissão Master', cls: 'right', html: x => money(x.a.Comissao_Master) },
+    { label: 'Recebido', cls: 'right', html: x => money(x.f.pago) },
+    { label: 'Falta', cls: 'right', html: x => x.f.saldo > 0.009 ? money(x.f.saldo) : '—' },
+    { label: 'Tempo gasto', cls: 'right', html: x => x.tempo ? fmtDur(x.tempo) : `<span class="muted">prev. ${fmtDur(tatDur(x.a))}</span>` }
+  ];
+  el.innerHTML = `${tatPeriodoBar(f, `
+      ${!isTat ? `<label>Tatuador<select data-f="tat">${opts([['', 'Todos'], ...profs('Tatuador').map(u => [u.ID, u.Nome])], f.tat)}</select></label>` : ''}
+      <label>Tipo<select data-f="tipo">${opts([['', 'Todos'], ...tiposTattoo().map(t => t.nome)], f.tipo)}</select></label>
+      <label>Situação<select data-f="st">${opts([['', 'Todas'], ...TAT_STATUS], f.st)}</select></label>`, 'Relatório')}
+    <div class="kpis">${kpi('Trabalhos', tot.n, 'gold', fmtDur(tot.tempo) + ' trabalhadas')}${kpi('Valor cobrado', money(tot.valor))}
+      ${kpi('Comissão do Master', money(tot.com), 'warn')}${kpi('Recebido', money(tot.pago), 'ok')}${kpi('Falta receber', money(tot.falta), tot.falta > 0.009 ? 'danger' : 'default')}
+      ${kpi('Produtos vendidos (sem comissão)', money(sum(vendas, 'Total_Venda')), 'info', `${vendas.length} venda(s) · 100% do tatuador`)}</div>
+    <div class="card"><div class="card-head"><h3>🖋️ Trabalhos — ${esc(per.nome)}</h3>
+      <div class="btn-row"><button type="button" class="btn small" data-act="impTrab">🖨️ Imprimir</button><button type="button" class="btn small" data-act="csvTrab">⬇️ Planilha</button></div></div>
+      ${table(colsTrab, linhas, { empty: 'Nenhum trabalho no período.' })}</div>
+    <div class="card"><h3>🎨 Resumo por tipo de serviço</h3>${table([
+      { label: 'Tipo', html: r => `<b>${esc(r.tipo)}</b>` },
+      { label: 'Qtd', cls: 'right', html: r => r.n },
+      { label: 'Valor cobrado', cls: 'right', html: r => money(r.valor) },
+      { label: 'Comissão Master', cls: 'right', html: r => money(r.com) },
+      { label: 'Tempo total', cls: 'right', html: r => r.tempo ? fmtDur(r.tempo) : '—' },
+      { label: 'Tempo médio', cls: 'right', html: r => r.medio ? fmtDur(r.medio) : '—' }
+    ], porTipo, { empty: 'Sem dados.' })}</div>
+    <div class="card"><h3>⏱️ Quanto tempo leva cada tipo de serviço</h3>
+      <p class="muted small">Calculado com o início e o fim lançados em todas as sessões executadas${f.tat ? ' de ' + esc(userName(f.tat)) : ''}. Use para acertar a duração prevista na agenda.</p>
+      ${table([
+        { label: 'Tipo', html: r => `<b>${esc(r.tipo)}</b>` },
+        { label: 'Sessões medidas', cls: 'right', html: r => r.n },
+        { label: 'Tempo médio', cls: 'right', html: r => `<b>${fmtDur(r.med)}</b>` },
+        { label: 'Mais rápida', cls: 'right', html: r => fmtDur(r.min) },
+        { label: 'Mais demorada', cls: 'right', html: r => fmtDur(r.max) },
+        { label: 'Previsto na tabela', cls: 'right', html: r => r.prev ? fmtDur(r.prev) : '—' },
+        { label: 'Diferença', cls: 'right', html: r => r.prev ? `<span class="${r.med > r.prev ? 't-danger' : 't-ok'}">${r.med > r.prev ? '+' : '−'}${fmtDur(Math.abs(r.med - r.prev))}</span>` : '—' },
+        { label: 'Valor por hora', cls: 'right', html: r => isFinite(r.porHora) ? money(r.porHora) : '—' }
+      ], estTempo, { empty: 'Ainda não há sessões com início e fim lançados.' })}</div>
+    <div class="card"><div class="card-head"><h3>📦 Estoque e vendas da loja do estúdio</h3>
+      <div class="btn-row"><button type="button" class="btn small" data-act="impEst">🖨️ Relatório de estoque</button></div></div>
+      ${estoqueTabela('Tatuagem', itens)}</div>`;
+  bind(el, {
+    ...tatPeriodoActs(f, rerender),
+    impTrab: () => showReceipt(reportHTML('Relatório de trabalhos — Tatuagem', `Período: ${per.nome}${f.tat ? ' · Tatuador: ' + esc(userName(f.tat)) : ''}`,
+      `<table><tr><th>Data/hora</th>${!isTat ? '<th>Tatuador</th>' : ''}<th>Cliente</th><th>Tipo</th><th class="r">Valor</th><th class="r">Comissão</th><th class="r">Recebido</th><th class="r">Tempo</th></tr>
+      ${linhas.map(x => `<tr><td>${fmtDate(x.a.DataHora)}</td>${!isTat ? `<td>${esc(userName(x.a.ID_Tatuador))}</td>` : ''}<td>${esc(x.a.Nome_Cliente)}</td><td>${esc(x.a.Tipo || '—')}</td><td class="r">${money(x.a.Valor_Total)}</td><td class="r">${money(x.a.Comissao_Master)}</td><td class="r">${money(x.f.pago)}</td><td class="r">${x.tempo ? fmtDur(x.tempo) : '—'}</td></tr>`).join('')}
+      <tr><th colspan="${isTat ? 3 : 4}">TOTAIS (${tot.n})</th><th class="r">${money(tot.valor)}</th><th class="r">${money(tot.com)}</th><th class="r">${money(tot.pago)}</th><th class="r">${fmtDur(tot.tempo)}</th></tr></table>
+      <h3>Por tipo de serviço</h3><table><tr><th>Tipo</th><th class="r">Qtd</th><th class="r">Valor</th><th class="r">Comissão</th><th class="r">Tempo médio</th></tr>
+      ${porTipo.map(r => `<tr><td>${esc(r.tipo)}</td><td class="r">${r.n}</td><td class="r">${money(r.valor)}</td><td class="r">${money(r.com)}</td><td class="r">${r.medio ? fmtDur(r.medio) : '—'}</td></tr>`).join('')}</table>`), '🖨️ Relatório'),
+    csvTrab: () => baixarArquivo(`tatuagem-trabalhos-${per.de}-a-${per.ate}.csv`, [
+      csvLinha(['Data', 'Hora', 'Tatuador', 'Cliente', 'Tipo de serviço', 'Descrição', 'Situação', 'Valor cobrado', 'Comissão Master', 'Recebido', 'Falta', 'Início real', 'Fim real', 'Tempo gasto (min)']),
+      ...linhas.map(x => csvLinha([fmtDate(dayOf(x.a.DataHora)), timeOf(x.a.DataHora), userName(x.a.ID_Tatuador), x.a.Nome_Cliente, x.a.Tipo, x.a.Descricao_Servico,
+        (TAT_STATUS.find(s => s[0] === x.a.Status) || [, x.a.Status])[1], csvNum(x.a.Valor_Total), csvNum(x.a.Comissao_Master), csvNum(x.f.pago), csvNum(Math.max(0, x.f.saldo)),
+        fmtDate(x.a.Inicio_Real), fmtDate(x.a.Fim_Real), x.tempo || '']))
+    ].join('\r\n')),
+    impEst: () => imprimirEstoque('Tatuagem', itens, per.nome)
+  });
+  bindFilters(el, f, rerender);
+}
+
+/* ---------- Recibo em PDF (biblioteca carregada só quando precisa, do próprio site) ---------- */
+let pdfLib = null;
+function carregarPDF() {
+  if (window.html2pdf) return Promise.resolve(window.html2pdf);
+  return pdfLib ||= new Promise((res, rej) => {
+    const sc = Object.assign(document.createElement('script'), { src: 'vendor/html2pdf.bundle.min.js' });
+    sc.onload = () => res(window.html2pdf);
+    sc.onerror = () => { pdfLib = null; rej(new Error('Não foi possível gerar o PDF agora. Use o botão Imprimir e escolha "Salvar como PDF".')); };
+    document.head.appendChild(sc);
+  });
+}
+/** Gera e baixa um PDF com o recibo ou relatório (no celular abre para compartilhar). */
+async function baixarPDF(html, titulo = 'recibo') {
+  const lib = await carregarPDF();
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;left:-10000px;top:0;background:#fff;color:#000;padding:6mm;width:' + (/class="report/.test(html) ? '190mm' : '80mm');
+  box.innerHTML = html;
+  document.body.appendChild(box);
+  const nome = `${slugNome(String(titulo).replace(/^[^\p{L}\p{N}]+/u, ''))}-${isoDate()}.pdf`;
+  try {
+    await lib().set({ margin: 4, filename: nome, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: /class="report/.test(html) ? 'a4' : [86, Math.max(120, box.offsetHeight * 0.3)], orientation: 'portrait' } }).from(box).save();
+  } finally { box.remove(); }
+  return true;
+}
+
+/** Recibo de um pagamento (parcela, entrada ou à vista) de uma sessão. */
+function reciboPagamento(p) {
+  const a = T('Agenda_Tatuagem').find(s => same(s.ID, p.ID_Sessao)) || {};
+  const f = a.ID ? tatFin(a) : { saldo: 0 };
+  showReceipt(receiptHTML({
+    titulo: 'RECIBO DE PAGAMENTO — TATUAGEM', id: p.ID, data: (p.Data_Pagamento || isoDate()) + 'T' + (timeOf(p.Alterado_Em) || '12:00'),
+    cliente: p.Nome_Cliente || a.Nome_Cliente, operador: userName(a.ID_Tatuador || p.ID_Tatuador),
+    itens: [[`${p.Parcela ? p.Parcela + ' — ' : ''}${a.Tipo || 'Tatuagem'}${a.DataHora ? ' (sessão ' + fmtDate(a.DataHora) + ')' : ''}`, '', p.Valor]], total: p.Valor,
+    extras: [['Forma', payLabel(p.Forma_Pagamento)], ['Valor do serviço', money(a.Valor_Total)], ['Total já pago', money(f.pago || p.Valor)], ['Saldo a pagar', money(Math.max(0, f.saldo))]],
+    obs: p.Obs || ''
+  }), '🧾 Recibo de pagamento');
+}
+
+/** Abre o comprovante que o cliente mandou pelo link. */
+async function verComprovante(idPag, tabela) {
+  const r = await Api.exec('verComprovante', { id: idPag, tabela }, { online: true });
+  const url = `data:${r.mime};base64,${r.base64}`;
+  const corpo = r.mime === 'application/pdf'
+    ? `<iframe src="${url}" style="width:100%;height:70vh;border:0" title="Comprovante"></iframe>`
+    : `<img src="${url}" alt="Comprovante" style="max-width:100%;display:block;margin:auto">`;
+  const m = openModal({ title: '👁 Comprovante do cliente', size: 'lg', body: corpo + `<p class="muted small" style="margin-top:.6rem">Confira no extrato do banco antes de confirmar a sessão.</p>`,
+    actions: [{ label: '⬇️ Baixar', cls: 'ghost', onClick: () => { const a = Object.assign(document.createElement('a'), { href: url, download: r.nome || 'comprovante' }); document.body.appendChild(a); a.click(); a.remove(); } }, { label: 'Fechar', cls: 'primary' }] });
+  return m;
+}
+
+/* ---------- Perfil do tatuador: Pix, horário e textos dos avisos (editáveis pelo tatuador) ---------- */
+const DEFAULT_TEXTOS_TATTOO = {
+  sanitario: 'Cuidados e condições sanitárias: o estúdio usa material descartável e esterilizado, aberto na sua frente. Venha alimentado(a), hidratado(a) e descansado(a). Não beba álcool nem tome remédios que afinem o sangue (como AAS) nas 24 horas antes. Avise se tiver alergia, diabetes, problema de coagulação, gravidez ou outra condição de saúde.',
+  menor: 'Menor de idade: só tatuamos menores de 18 anos acompanhados do pai, da mãe ou do responsável legal, com documento com foto de ambos e autorização assinada no estúdio.',
+  falta: 'Faltas e remarcação: a entrada de {entrada}% garante o seu horário. Se não comparecer, a entrada não será devolvida. Para desmarcar ou remarcar sem perder a entrada, avise com pelo menos 24 horas de antecedência.',
+  cuidados: 'Depois da tatuagem: lave com sabonete neutro, use a pomada indicada, não coce, não tome sol e não entre em piscina ou mar por 15 dias.'
+};
+const TEXTOS_LABEL = { sanitario: '🧼 Condições sanitárias', menor: '🧒 Menor de idade', falta: '📅 Falta e desmarcação (24 h)', cuidados: '🩹 Cuidados depois da tatuagem' };
+const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const entradaPct = () => num(cfgVal('tattoo_entrada_pct', 30));
+function perfilTat(id) {
+  const p = cfgVal('tatuador_' + id, {}) || {};
+  return { pix: p.pix || '', titular: p.titular || '', banco: p.banco || '',
+    horario: { dias: [1, 2, 3, 4, 5, 6], inicio: '10:00', fim: '20:00', ...(p.horario || {}) },
+    textos: { ...DEFAULT_TEXTOS_TATTOO, ...(p.textos || {}) } };
+}
+const textoAviso = (txt, d = {}) => fillTpl(txt, { entrada: entradaPct(), ...d });
+const linkAgendamento = id => new URL(`agendar.html?t=${encodeURIComponent(id)}`, location.href.split('#')[0]).href;
+
+/** Monta a mensagem de WhatsApp com os avisos escolhidos para uma sessão ou cliente. */
+function avisosClienteModal({ tatId, sessao, cli }) {
+  const perf = perfilTat(tatId);
+  const nome = (sessao?.Nome_Cliente || cli?.Nome || '').split(' ')[0];
+  const fone = cliente(sessao?.ID_Cliente)?.Telefone_WhatsApp || sessao?.Telefone || cli?.Telefone_WhatsApp || '';
+  const marcados = new Set(['sanitario', 'falta', ...(sessao?.Menor === 'Sim' ? ['menor'] : [])]);
+  formModal({
+    title: `📲 Avisos para ${nome || 'o cliente'}`,
+    intro: `<p class="muted small">Escolha os avisos. O WhatsApp abre com a mensagem pronta${fone ? ` para <b>${esc(fone)}</b>` : ''}.</p>`,
+    values: { quais: JSON.stringify([...marcados]), fone },
+    fields: [
+      { name: 'quais', label: 'Avisos', type: 'checks', full: true, options: Object.entries(TEXTOS_LABEL) },
+      { name: 'fone', label: 'WhatsApp do cliente', inputmode: 'tel', required: true },
+      { name: 'link', label: 'Incluir o link para agendar', type: 'select', options: [['nao', 'Não'], ['sim', 'Sim']] }
+    ],
+    submitLabel: '📲 Abrir WhatsApp',
+    onSubmit: d => {
+      if (!d.quais.length && d.link !== 'sim') throw new Error('Escolha pelo menos um aviso.');
+      const partes = [`Olá${nome ? ' ' + nome : ''}! Aqui é ${userName(tatId)}, do estúdio de tatuagem Preto Rico 🖋️`];
+      if (sessao?.DataHora && sessao.Status !== 'Cancelado') partes.push(`Sua sessão: ${fmtDate(sessao.DataHora)}${sessao.Tipo ? ' · ' + sessao.Tipo : ''}.`);
+      d.quais.forEach(k => partes.push(textoAviso(perf.textos[k], { nome })));
+      if (d.link === 'sim') partes.push(`Para agendar, escolha o horário e envie o comprovante da entrada aqui: ${linkAgendamento(tatId)}`);
+      openWA(d.fone, partes.join('\n\n'));
+    }
+  });
+}
+
+/** Link para o cliente escolher o horário e mandar o comprovante da entrada. */
+function linkAgendamentoModal(tatPadrao) {
+  const isTat = lvl() === 'Tatuador';
+  const tats = isTat ? [S.user] : profs('Tatuador');
+  if (!tats.length) return toast('Cadastre um tatuador em Usuários primeiro.', 'warn');
+  if (!Api.isRemote()) toast('No modo local (demonstração) o link não recebe pedidos.', 'warn');
+  let id = tatPadrao || tats[0].ID;
+  const corpo = () => {
+    const perf = perfilTat(id);
+    return `${!isTat ? `<div class="field"><label>Tatuador</label><select id="lk-tat">${opts(tats.map(u => [u.ID, u.Nome]), id)}</select></div>` : ''}
+      <p>O cliente abre o link, escolhe o tipo, o dia e o horário livre, paga a entrada de <b>${entradaPct()}%</b> por Pix e manda o comprovante. O pedido aparece na agenda como <b>Pedido pelo link</b> para você confirmar.</p>
+      <div class="field"><label>Link</label><input id="lk-url" readonly value="${esc(linkAgendamento(id))}"></div>
+      ${!perf.pix ? `<div class="alert warn" style="margin-top:.6rem"><span class="ic">⚠️</span><div>Cadastre a chave Pix em <b>📲 Avisos ao cliente</b> antes de mandar o link.</div></div>` : ''}`;
+  };
+  const m = openModal({ title: '🔗 Link de agendamento', body: `<div id="lk-body">${corpo()}</div>`,
+    actions: [
+      { label: '📋 Copiar', cls: 'ghost', onClick: async () => { const v = $('#lk-url').value; try { await navigator.clipboard.writeText(v); toast('Link copiado ✔', 'ok'); } catch (e) { $('#lk-url').select(); document.execCommand('copy'); toast('Link copiado ✔', 'ok'); } } },
+      { label: '📲 Enviar no WhatsApp', cls: 'primary big', onClick: (f, close) => { close(); avisosClienteModal({ tatId: id }); setTimeout(() => { const s = $('.modal [name="link"]'); if (s) s.value = 'sim'; }, 50); } }
+    ] });
+  m.node.addEventListener('change', e => { if (e.target.id === 'lk-tat') { id = e.target.value; $('#lk-body', m.node).innerHTML = corpo(); } });
+}
+
+/* ---------- Aba Avisos ao cliente ---------- */
+function tatAvisosCliente(el) {
+  const isTat = lvl() === 'Tatuador';
+  const f = S.filters.tatAv ||= { tat: isTat ? S.user.ID : (profs('Tatuador')[0] || {}).ID || '' };
+  if (isTat) f.tat = S.user.ID;
+  const podeEditar = isTat || isMaster();
+  if (!f.tat) { el.innerHTML = '<div class="empty">Cadastre um tatuador em Usuários primeiro.</div>'; return; }
+  const perf = perfilTat(f.tat);
+  const prox = T('Agenda_Tatuagem').filter(a => same(a.ID_Tatuador, f.tat) && ['Agendado', 'Solicitado'].includes(a.Status) && dayOf(a.DataHora) >= isoDate())
+    .sort((a, b) => String(a.DataHora).localeCompare(b.DataHora)).slice(0, 30);
+  el.innerHTML = `<div class="toolbar">
+      ${!isTat ? `<label>Tatuador<select data-f="tat">${opts(profs('Tatuador').map(u => [u.ID, u.Nome]), f.tat)}</select></label>` : ''}
+      <button type="button" class="btn primary big" data-act="link">🔗 Link para o cliente agendar</button>
+      <button type="button" class="btn" data-act="enviarLivre">📲 Mandar avisos para um cliente</button>
+    </div>
+    <div class="card"><h3>📅 Próximas sessões</h3>${table([
+      { label: 'Data', html: a => fmtDate(a.DataHora) },
+      { label: 'Cliente', html: a => `<b>${esc(a.Nome_Cliente)}</b>${a.Menor === 'Sim' ? ' ' + badge('Menor', 'warn') : ''}` },
+      { label: 'Situação', html: a => tatBadge(a.Status) },
+      { label: '', cls: 'actions', html: a => `<button type="button" class="btn small wa" data-act="enviar" data-id="${esc(a.ID)}">📲 Mandar avisos</button>` }
+    ], prox, { empty: 'Nenhuma sessão marcada.' })}</div>
+    <div class="card"><div class="card-head"><h3>✏️ Textos dos avisos${!isTat ? ' — ' + esc(userName(f.tat)) : ''}</h3></div>
+      <p class="muted small">${podeEditar ? 'Você pode mudar estes textos quando quiser. ' : ''}Use {entrada} para a % da entrada (hoje ${entradaPct()}%) e {nome} para o nome do cliente. Eles aparecem na página de agendamento e nas mensagens de WhatsApp.</p>
+      <div class="form-grid">${Object.entries(TEXTOS_LABEL).map(([k, l]) => `<div class="field full"><label>${esc(l)}</label>
+        <textarea data-txt="${k}" rows="4" ${podeEditar ? '' : 'readonly'}>${esc(perf.textos[k])}</textarea></div>`).join('')}</div></div>
+    <div class="card"><h3>💸 Dados para a entrada (Pix) e horário de atendimento</h3>
+      <div class="form-grid">
+        <div class="field"><label>Chave Pix</label><input id="av-pix" value="${esc(perf.pix)}" ${podeEditar ? '' : 'readonly'} placeholder="CPF, celular, e-mail ou chave aleatória"></div>
+        <div class="field"><label>Nome do titular</label><input id="av-tit" value="${esc(perf.titular)}" ${podeEditar ? '' : 'readonly'}></div>
+        <div class="field"><label>Banco</label><input id="av-banco" value="${esc(perf.banco)}" ${podeEditar ? '' : 'readonly'}></div>
+        <div class="field"><label>Atende das</label><input id="av-ini" type="time" value="${esc(perf.horario.inicio)}" ${podeEditar ? '' : 'readonly'}></div>
+        <div class="field"><label>Até as</label><input id="av-fim" type="time" value="${esc(perf.horario.fim)}" ${podeEditar ? '' : 'readonly'}></div>
+        <div class="field full"><label>Dias de atendimento</label><div class="checks">${DIAS_SEMANA.map((d, i) => `<label class="check"><input type="checkbox" data-dia="${i}" ${perf.horario.dias.map(Number).includes(i) ? 'checked' : ''} ${podeEditar ? '' : 'disabled'}> ${d}</label>`).join('')}</div></div>
+      </div>
+      ${podeEditar ? `<div class="btn-row" style="margin-top:1rem"><button type="button" class="btn primary big" data-act="salvar">💾 Salvar avisos e dados</button>
+        <button type="button" class="btn ghost" data-act="padrao">Voltar aos textos padrão</button></div>` : ''}</div>`;
+  const ler = () => ({
+    pix: $('#av-pix', el).value.trim(), titular: $('#av-tit', el).value.trim(), banco: $('#av-banco', el).value.trim(),
+    horario: { inicio: $('#av-ini', el).value, fim: $('#av-fim', el).value, dias: $$('[data-dia]', el).filter(c => c.checked).map(c => Number(c.dataset.dia)) },
+    textos: Object.fromEntries($$('[data-txt]', el).map(t => [t.dataset.txt, t.value.trim()]))
+  });
+  bind(el, {
+    link: () => linkAgendamentoModal(f.tat),
+    enviarLivre: () => {
+      const cs = clientes();
+      formModal({ title: '📲 Mandar avisos', fields: [{ name: 'cli', label: 'Cliente', type: 'select', options: [['', '— Digitar o número —'], ...cs.map(c => [c.ID, c.Nome])] }],
+        submitLabel: 'Continuar', onSubmit: d => { setTimeout(() => avisosClienteModal({ tatId: f.tat, cli: cliente(d.cli) }), 50); } });
+    },
+    enviar: d => avisosClienteModal({ tatId: f.tat, sessao: T('Agenda_Tatuagem').find(a => same(a.ID, d.id)) }),
+    salvar: async () => {
+      const p = ler();
+      if (p.horario.inicio >= p.horario.fim) return toast('O horário final precisa ser depois do inicial.', 'warn');
+      if (!p.horario.dias.length) return toast('Marque pelo menos um dia de atendimento.', 'warn');
+      if (await run(() => Api.exec('salvarPerfilTatuador', { ID_Tatuador: f.tat, perfil: p }), 'Avisos e dados salvos ✔')) tatAvisosCliente(el);
+    },
+    padrao: async () => {
+      if (!(await confirmModal('Voltar todos os textos para o padrão do sistema?', { ok: 'Voltar ao padrão' }))) return;
+      $$('[data-txt]', el).forEach(t => { t.value = DEFAULT_TEXTOS_TATTOO[t.dataset.txt]; });
+      toast('Textos padrão colocados. Toque em Salvar para gravar.', '');
+    }
+  });
+  bindFilters(el, f, () => tatAvisosCliente(el));
+}
+
+/* ---------- Aba Repasses: comissão do Master devida no mês x repassada ---------- */
+function tatRepasses(el) {
+  const isTat = lvl() === 'Tatuador';
+  const f = S.filters.tatRep ||= { mes: monthOf(isoDate()), tat: '' };
+  if (isTat) f.tat = S.user.ID;
+  const tats = isTat ? [S.user] : profs('Tatuador').filter(u => !f.tat || same(u.ID, f.tat));
+  const reps = T('Tattoo_Repasses').filter(r => r.Status !== 'Cancelado');
+  const devidoMes = (id, mes) => sum(T('Agenda_Tatuagem').filter(a => same(a.ID_Tatuador, id) && a.Status === 'Concluido' && monthOf(a.DataHora) === mes), 'Comissao_Master');
+  const repMes = (id, mes, st) => sum(reps.filter(r => same(r.ID_Tatuador, id) && r.Mes === mes && (!st || r.Status === st)), 'Valor');
+  // saldo dos meses anteriores (até 12 meses)
+  const anteriores = id => { let s = 0; for (let i = 1; i <= 12; i++) { const m = addMonth(f.mes, -i); s += Math.max(0, r2(devidoMes(id, m) - repMes(id, m))); } return r2(s); };
+  const linhas = tats.map(u => {
+    const dev = r2(devidoMes(u.ID, f.mes)), conf = r2(repMes(u.ID, f.mes, 'Confirmado')), inf = r2(repMes(u.ID, f.mes, 'Informado'));
+    return { u, dev, conf, inf, falta: r2(Math.max(0, dev - conf - inf)), atras: anteriores(u.ID) };
+  });
+  const lista = T('Tattoo_Repasses').filter(r => r.Mes === f.mes && (!f.tat || same(r.ID_Tatuador, f.tat))).sort((a, b) => String(b.Data).localeCompare(a.Data));
+  const rerender = () => tatRepasses(el);
+  el.innerHTML = `<div class="toolbar">
+      <button type="button" class="icon-btn" data-act="mPrev" aria-label="Mês anterior">‹</button>
+      <strong class="wk-title">${esc(fmtMonth(f.mes))}</strong>
+      <button type="button" class="icon-btn" data-act="mNext" aria-label="Próximo mês">›</button>
+      ${!isTat ? `<label>Tatuador<select data-f="tat">${opts([['', 'Todos'], ...profs('Tatuador').map(u => [u.ID, u.Nome])], f.tat)}</select></label>` : ''}
+      <button type="button" class="btn primary big" data-act="novo">➕ ${isTat ? 'Registrar repasse ao Master' : 'Lançar repasse recebido'}</button>
+    </div>
+    <div class="alert info"><span class="ic">ℹ️</span><div>A comissão do Master é a das sessões <b>executadas no mês</b> e deve ser repassada dentro do mês, mesmo que o cliente pague a prazo. A venda de produtos não tem comissão.</div></div>
+    ${linhas.map(l => `<div class="card"><div class="card-head"><h3>🖋️ ${esc(l.u.Nome)}</h3></div>
+      <div class="kpis">${kpi('Comissão do mês', money(l.dev), 'gold')}${kpi('Repassado e confirmado', money(l.conf), 'ok')}
+        ${kpi('Informado, aguardando o Master', money(l.inf), 'info')}${kpi('Falta repassar', money(l.falta), l.falta > 0.009 ? 'danger' : 'ok')}
+        ${l.atras > 0.009 ? kpi('Pendente de meses anteriores', money(l.atras), 'danger') : ''}</div></div>`).join('') || '<div class="empty">Nenhum tatuador.</div>'}
+    <div class="card"><h3>📋 Repasses de ${esc(fmtMonth(f.mes))}</h3>${table([
+      { label: 'Data', html: r => fmtDate(r.Data) },
+      ...(!isTat ? [{ label: 'Tatuador', html: r => esc(userName(r.ID_Tatuador)) }] : []),
+      { label: 'Valor', cls: 'right', html: r => `<b>${money(r.Valor)}</b>` },
+      { label: 'Forma', html: r => esc(payLabel(r.Forma_Pagamento)) },
+      { label: 'Situação', html: r => r.Status === 'Confirmado' ? badge('Confirmado pelo Master', 'ok') : r.Status === 'Cancelado' ? badge('Cancelado', 'muted') : badge('Aguardando o Master', 'warn') },
+      { label: 'Obs.', html: r => esc(r.Obs || '') },
+      { label: '', cls: 'actions', html: r => `
+        ${isMaster() && r.Status === 'Informado' ? `<button type="button" class="btn small ok" data-act="confirmar" data-id="${esc(r.ID)}">✔ Confirmar recebimento</button>` : ''}
+        ${r.Status !== 'Cancelado' ? `<button type="button" class="btn small" data-act="recibo" data-id="${esc(r.ID)}">🧾 Recibo</button>` : ''}
+        ${(isMaster() || r.Status === 'Informado') && r.Status !== 'Cancelado' ? `<button type="button" class="btn small ghost" data-act="editar" data-id="${esc(r.ID)}">✏️</button>
+          <button type="button" class="btn small danger-ghost" data-act="cancelar" data-id="${esc(r.ID)}">✕</button>` : ''}` }
+    ], lista, { empty: 'Nenhum repasse neste mês.' })}</div>`;
+  const rep = id => T('Tattoo_Repasses').find(r => same(r.ID, id));
+  const form = (r = {}) => {
+    const tatId = r.ID_Tatuador || f.tat || (linhas[0] && linhas[0].u.ID);
+    const l = linhas.find(x => same(x.u.ID, tatId));
+    formModal({
+      title: r.ID ? '✏️ Editar repasse' : '➕ Repasse da comissão ao Master',
+      values: { Mes: f.mes, Data: isoDate(), Forma_Pagamento: 'Pix', Valor: r.ID ? r.Valor : (l ? l.falta : '') || '', ID_Tatuador: tatId, ...r },
+      fields: [
+        ...(!isTat ? [{ name: 'ID_Tatuador', label: 'Tatuador', type: 'select', options: profs('Tatuador').map(u => [u.ID, u.Nome]), required: true }] : []),
+        { name: 'Mes', label: 'Comissão do mês', type: 'month', required: true },
+        { name: 'Valor', label: 'Valor repassado (R$)', type: 'number', step: '0.01', min: 0.01, required: true, inputmode: 'decimal' },
+        { name: 'Data', label: 'Data do repasse', type: 'date', required: true },
+        { name: 'Forma_Pagamento', label: 'Forma', type: 'select', options: TAT_PAY.map(x => [x.id, x.label]) },
+        { name: 'Obs', label: 'Observação', full: true }
+      ],
+      intro: isTat ? '<p class="muted small">O Master recebe o aviso e confirma o recebimento.</p>' : '',
+      onSubmit: async d => {
+        await Api.exec('salvarRepasse', { row: { ...r, ...d, ID: r.ID || uid('RP'), ...(isMaster() ? { Status: r.Status || 'Confirmado' } : {}) } });
+        toast('Repasse salvo ✔', 'ok'); refresh();
+      }
+    });
+  };
+  bind(el, {
+    mPrev: () => { f.mes = addMonth(f.mes, -1); rerender(); },
+    mNext: () => { f.mes = addMonth(f.mes, 1); rerender(); },
+    novo: () => form(),
+    editar: d => form(rep(d.id)),
+    confirmar: async d => { if (await run(() => Api.exec('salvarRepasse', { row: { ...rep(d.id), Status: 'Confirmado' } }), 'Repasse confirmado ✔')) refresh(); },
+    cancelar: async d => {
+      if (await confirmModal('Cancelar este repasse? Ele fica no histórico como cancelado.', { ok: 'Cancelar repasse', cls: 'danger' })
+        && await run(() => Api.exec('salvarRepasse', { row: { ...rep(d.id), Status: 'Cancelado' } }), 'Repasse cancelado')) refresh();
+    },
+    recibo: d => {
+      const r = rep(d.id);
+      showReceipt(receiptHTML({ titulo: 'RECIBO DE REPASSE DE COMISSÃO', id: r.ID, data: r.Data + 'T' + (timeOf(r.Alterado_Em) || '12:00'), cliente: 'Preto Rico (Master)', operador: userName(r.ID_Tatuador),
+        itens: [[`Comissão da sala — ${fmtMonth(r.Mes)}`, '', r.Valor]], total: r.Valor,
+        extras: [['Forma', payLabel(r.Forma_Pagamento)], ['Situação', r.Status === 'Confirmado' ? `Confirmado por ${userName(r.Confirmado_Por)} em ${fmtDate(r.Confirmado_Em)}` : 'Aguardando confirmação do Master']],
+        obs: r.Obs || '' }), '🧾 Recibo de repasse');
+    }
+  });
+  bindFilters(el, f, rerender);
+}
+
+/* ---------- Relatório de estoque (todas as lojas) ---------- */
+/** Tabela de estoque com o que foi vendido no período (itens = Vendas_Itens do período). */
+function estoqueTabela(act, itens) {
+  const master = isMaster();
+  const vend = {};
+  itens.forEach(i => { const v = vend[i.ID_Produto] ||= { q: 0, fat: 0 }; v.q += num(i.Qtd); v.fat += num(i.Subtotal); });
+  const prods = T('Estoque').filter(p => p.Atividade === act).sort((a, b) => String(a.Produto).localeCompare(b.Produto));
+  return table([
+    { label: 'Produto', html: p => `<b>${esc(p.Produto)}</b>` },
+    { label: 'Em estoque', cls: 'right', html: p => num(p.Qtd) },
+    { label: 'Mínimo', cls: 'right', html: p => num(p.Minimo) },
+    { label: 'Situação', html: p => stockBadge(p) },
+    { label: 'Vendidos', cls: 'right', html: p => vend[p.ID]?.q || 0 },
+    { label: 'Faturado', cls: 'right', html: p => money(vend[p.ID]?.fat || 0) },
+    { label: 'Preço', cls: 'right', html: p => money(p.Preco_Venda) },
+    ...(master ? [{ label: 'Valor em estoque (custo)', cls: 'right', html: p => money(num(p.Qtd) * num(p.Preco_Custo)) }] : [])
+  ], prods, { empty: 'Nenhum produto cadastrado nesta loja.' });
+}
+
+function imprimirEstoque(act, itens, periodo) {
+  const master = isMaster();
+  const vend = {};
+  itens.forEach(i => { const v = vend[i.ID_Produto] ||= { q: 0, fat: 0 }; v.q += num(i.Qtd); v.fat += num(i.Subtotal); });
+  const prods = T('Estoque').filter(p => p.Atividade === act).sort((a, b) => String(a.Produto).localeCompare(b.Produto));
+  showReceipt(reportHTML(`Relatório de estoque — ${ACT_LABEL[act] || act}`, `Vendas do período: ${periodo}`,
+    `<table><tr><th>Produto</th><th class="r">Estoque</th><th class="r">Mínimo</th><th>Situação</th><th class="r">Vendidos</th><th class="r">Faturado</th>${master ? '<th class="r">Custo total</th>' : ''}</tr>
+    ${prods.map(p => `<tr><td>${esc(p.Produto)}</td><td class="r">${num(p.Qtd)}</td><td class="r">${num(p.Minimo)}</td><td>${STOCK_LABEL[stockLevel(p)]}</td><td class="r">${vend[p.ID]?.q || 0}</td><td class="r">${money(vend[p.ID]?.fat || 0)}</td>${master ? `<td class="r">${money(num(p.Qtd) * num(p.Preco_Custo))}</td>` : ''}</tr>`).join('')}
+    <tr><th>TOTAIS (${prods.length} produtos)</th><th class="r">${sum(prods, 'Qtd')}</th><th></th><th></th><th class="r">${sum(Object.values(vend), 'q')}</th><th class="r">${money(sum(Object.values(vend), 'fat'))}</th>${master ? `<th class="r">${money(sum(prods, p => num(p.Qtd) * num(p.Preco_Custo)))}</th>` : ''}</tr></table>
+    <p>Itens com estoque baixo ou crítico: <b>${prods.filter(p => stockLevel(p) !== 'ok').map(p => esc(p.Produto)).join(', ') || 'nenhum'}</b></p>`), '🖨️ Estoque');
+}
+
+function tatTipos(el) {
+  const list = S.filters.tatTipos ||= tiposTattoo().map(t => ({ ...t }));
+  el.innerHTML = `<div class="card"><div class="card-head"><h3>🎨 Tipos de tatuagem</h3></div>
+    <p class="muted small">Só o Master altera esta tabela. Ao escolher o tipo na sessão, o sistema preenche o valor e a duração, e calcula a comissão do Master pela % da sala.</p>
+    ${table([
+      { label: 'Tipo', html: t => `<input data-i="${list.indexOf(t)}" data-k="nome" value="${esc(t.nome)}">` },
+      { label: 'Valor base (R$)', html: t => `<input type="number" step="0.01" min="0" data-i="${list.indexOf(t)}" data-k="preco" value="${esc(t.preco)}">` },
+      { label: 'Duração (min)', html: t => `<input type="number" step="15" min="15" data-i="${list.indexOf(t)}" data-k="duracao" value="${esc(t.duracao)}">` },
+      { label: '% da sala', html: t => `<input type="number" step="1" min="0" max="100" data-i="${list.indexOf(t)}" data-k="pct" value="${esc(t.pct)}">` },
+      { label: '', cls: 'actions', html: t => `<button type="button" class="btn small danger-ghost" data-act="rm" data-i="${list.indexOf(t)}">Remover</button>` }
+    ], list, { empty: 'Nenhum tipo cadastrado.' })}
+    <div class="btn-row" style="margin-top:1rem">
+      <button type="button" class="btn" data-act="add">➕ Adicionar tipo</button>
+      <button type="button" class="btn primary big" data-act="salvar">💾 Salvar tipos</button>
+    </div></div>`;
+  el.oninput = e => { const i = e.target.dataset.i, k = e.target.dataset.k; if (i != null && k) list[i][k] = k === 'nome' ? e.target.value : num(e.target.value); };
+  bind(el, {
+    add: () => { list.push({ nome: 'Novo tipo', preco: 0, duracao: 120, pct: num(cfgVal('comissao_master_tattoo', 30)) }); tatTipos(el); },
+    rm: d => { list.splice(Number(d.i), 1); tatTipos(el); },
+    salvar: async () => {
+      const clean = list.filter(t => String(t.nome).trim()).map(t => ({ nome: String(t.nome).trim(), preco: num(t.preco), duracao: num(t.duracao) || 120, pct: Math.min(100, Math.max(0, num(t.pct))) }));
+      const nomes = clean.map(t => t.nome.toLowerCase());
+      if (new Set(nomes).size !== nomes.length) return toast('Há tipos com o mesmo nome.', 'warn');
+      if (await run(() => Api.exec('salvarConfig', { Chave: 'tipos_tatuagem', Valor: clean }), 'Tipos de tatuagem salvos ✔')) { delete S.filters.tatTipos; tatTipos(el); }
+    }
+  });
 }
 
 function fechTable(rows) {
@@ -1724,7 +2820,7 @@ RENDER.financeiro = { caixa: finCaixa, contas: finContas, ofx: finOFX, comissoes
 /* ---------- Fechamento de caixa diário ---------- */
 function finCaixa(el) {
   const f = S.filters.caixa ||= { dia: isoDate(), user: '' };
-  const vendas = T('Vendas_PDV').filter(v => dayOf(v.DataHora) === f.dia && (!f.user || same(v.ID_Usuario, f.user)));
+  const vendas = T('Vendas_PDV').filter(v => dayOf(v.DataHora) === f.dia && v.Atividade !== 'Tatuagem' && (!f.user || same(v.ID_Usuario, f.user)));
   const recs = T('Recebimentos').filter(r => dayOf(r.DataHora) === f.dia && (!f.user || same(r.ID_Usuario, f.user)));
   const ops = {};
   const get = id => (ops[id] ||= { id, Pix: 0, Cartao: 0, Dinheiro: 0, Crediario: 0, vendas: 0, receb: 0 });
@@ -2133,7 +3229,7 @@ function renderUsuarios(el) {
     ], users().slice().sort((a, b) => LEVELS.indexOf(a.Nivel) - LEVELS.indexOf(b.Nivel) || String(a.Nome).localeCompare(b.Nome)))}
     <div class="card" style="margin-top:1rem"><h3>ℹ️ O que cada nível pode fazer</h3>
       <p class="muted">👑 <b>Master</b>: tudo — custos, lucro, fechamentos, usuários.<br>💈 <b>Barbeiro</b>: agenda e lançamento de cortes, só a própria comissão.<br>
-      🛒 <b>Caixa</b>: vendas, fiado e consulta de estoque, sem ver custo nem lucro. Desconto exige senha do Master.<br>🖋️ <b>Tatuador</b>: própria agenda e fechamento com a comissão da sala.</p></div>`;
+      🛒 <b>Caixa</b>: vendas, fiado e consulta de estoque, sem ver custo nem lucro. Desconto exige senha do Master.<br>🖋️ <b>Tatuador</b>: própria agenda, início e fim do serviço, pagamentos dos clientes, venda dos produtos do estúdio, fechamento e relatórios. Não altera preços, produtos nem %.<br>🛒 O <b>Caixa</b> também marca sessões de tatuagem e lança pagamentos.</p></div>`;
   bind(el, {
     novo: () => usuarioForm(),
     editar: d => usuarioForm(users().find(u => same(u.ID, d.id))),
@@ -2161,6 +3257,8 @@ function renderConfig(el) {
         <div class="field"><label>Telefone</label><input id="cf-tel" value="${esc(e.tel)}"></div>
         <div class="field full"><label>Endereço</label><input id="cf-end" value="${esc(e.end)}"></div>
         <div class="field"><label>% padrão da sala (tatuagem)</label><input id="cf-tat" type="number" min="0" max="100" value="${esc(cfgVal('comissao_master_tattoo', 30))}"></div>
+        <div class="field"><label>% de entrada no agendamento pelo link</label><input id="cf-entrada" type="number" min="0" max="100" value="${esc(cfgVal('tattoo_entrada_pct', 30))}"></div>
+        <div class="field full"><label class="check"><input type="checkbox" id="cf-prodtat" ${cfgVal('tattoo_produtos_do_tatuador', true) !== false ? 'checked' : ''}> O tatuador cadastra os próprios produtos, preços e estoque (a venda é dele, sem comissão)</label></div>
       </div>
       <button type="button" class="btn primary" data-act="salvarEmp" style="margin-top:1rem">💾 Salvar</button>
     </div>
@@ -2178,13 +3276,15 @@ function renderConfig(el) {
         ${Api.isRemote() ? '<button type="button" class="btn primary" data-act="sync">🔄 Sincronizar agora</button>' : ''}</div>
     </div>
     <div class="card" id="cf-autobk">${autoBackupCard()}</div>
-    <div class="card"><h3>💾 Backup manual</h3>
-      <p class="muted small">Exporte uma cópia dos dados deste aparelho em JSON. A importação só é usada no modo local.</p>
+    <div class="card"><h3>💾 Backup manual e restauração</h3>
+      <p class="muted small">Trocou de aparelho ou reinstalou? Basta entrar com o seu PIN: os dados estão na nuvem. Use a restauração só se precisar recuperar dados de um arquivo de backup (funciona no celular e no computador).</p>
       <div class="btn-row">
-        <button type="button" class="btn" data-act="export">⬇️ Exportar backup</button>
-        ${!Api.isRemote() ? `<label class="btn">⬆️ Importar backup<input type="file" id="cf-import" accept=".json" hidden></label>
-        <button type="button" class="btn danger-ghost" data-act="demo">Restaurar dados de demonstração</button>` : ''}
+        <label class="btn primary">⬆️ Restaurar de um arquivo<input type="file" id="cf-restore" accept=".json,application/json" hidden></label>
+        ${!Api.isRemote() ? '<button type="button" class="btn danger-ghost" data-act="demo">Restaurar dados de demonstração</button>' : ''}
       </div>
+      <div class="field" style="margin-top:.8rem"><label>Baixar backup agora</label>
+        <div class="btn-row"><select id="cf-bk-qual">${opts([...BK_PASTAS.map(b => [b.slug, b.pasta.replace(/^\d+ /, '')]), ...users().filter(u => u.Nivel === 'Tatuador').map(u => ['tat:' + u.ID, 'Tatuador: ' + u.Nome])], 'geral')}</select>
+        <button type="button" class="btn" data-act="export">⬇️ Baixar</button></div></div>
     </div></div>`;
   const saveCfg = (k, v) => Api.exec('salvarConfig', { Chave: k, Valor: v });
   bind(el, {
@@ -2192,6 +3292,8 @@ function renderConfig(el) {
       const ok = await run(async () => {
         await saveCfg('empresa', { nome: $('#cf-nome').value.trim() || 'Preto Rico', doc: $('#cf-doc').value.trim(), tel: $('#cf-tel').value.trim(), end: $('#cf-end').value.trim() });
         await saveCfg('comissao_master_tattoo', num($('#cf-tat').value));
+        await saveCfg('tattoo_entrada_pct', Math.min(100, Math.max(0, num($('#cf-entrada').value))));
+        await saveCfg('tattoo_produtos_do_tatuador', $('#cf-prodtat').checked);
       }, 'Configurações salvas ✔');
       if (ok) renderConfig(el);
     },
@@ -2199,9 +3301,11 @@ function renderConfig(el) {
     server: serverConfigModal,
     sync: () => doSync(false),
     export: () => {
-      const blob = new Blob([Api.exportJSON()], { type: 'application/json' });
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `preto-rico-backup-${isoDate()}.json` });
-      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      const v = $('#cf-bk-qual', el).value;
+      const tat = v.startsWith('tat:') ? users().find(u => same(u.ID, v.slice(4))) : null;
+      const bk = tat ? BK_PASTAS[4] : BK_PASTAS.find(x => x.slug === v) || BK_PASTAS[0];
+      const nome = tat ? `preto-rico-tatuador-${slugNome(tat.Nome)}-${isoDate()}.json` : `preto-rico-${bk.slug}-${isoDate()}.json`;
+      baixarArquivo(nome, arquivoBackup(Api.snapshot(), bk, tat), 'application/json');
     },
     demo: async () => {
       if (await confirmModal('Apagar os dados locais e restaurar a demonstração?', { ok: 'Restaurar', cls: 'danger' })) { Api.seed(demoData(), true); logout(); }
@@ -2214,25 +3318,88 @@ function renderConfig(el) {
   });
   AutoBackup.status().then(() => { const c = $('#cf-autobk', el); if (c) c.innerHTML = autoBackupCard(); });
   el.onchange = async ev => {
-    if (ev.target.id === 'cf-import') {
+    if (ev.target.id === 'cf-restore') {
       const file = ev.target.files[0];
+      ev.target.value = '';
       if (!file) return;
-      if (await run(async () => Api.importJSON(await readFileText(file, 'utf-8')), 'Backup importado ✔')) refresh();
+      try { await restaurarArquivo(file); } catch (e) { toast(e.message || String(e), 'danger'); }
     }
   };
 }
 
 /* ==========================================================================
-   14b. BACKUP AUTOMÁTICO NO COMPUTADOR
+   14b. BACKUP AUTOMÁTICO NO COMPUTADOR DO MASTER
    Usa a File System Access API (Chrome/Edge no computador): o Master escolhe
-   uma pasta uma única vez e o sistema grava uma cópia JSON por dia nela,
-   mantendo os 30 arquivos mais recentes. Celulares não têm essa API, então
-   neles o sistema funciona só pela rede, sem backup local.
+   uma pasta uma única vez e o sistema grava nela, a cada dia, um arquivo por
+   atividade em subpastas próprias (00 Geral, 01 Barbearia, 02 Tabacaria...,
+   04 Estúdio Tattoo e uma subpasta por tatuador). Cada arquivo é cumulativo:
+   traz todos os movimentos e cadastros até aquele dia, então o mais recente
+   sozinho restaura tudo. Só roda na sessão do Master; celulares não guardam
+   backup (só o cache do que está aberto).
    ========================================================================== */
+const BK_PASTAS = [
+  { pasta: '00 Geral (completo)', act: '', slug: 'geral' },
+  { pasta: '01 Barbearia', act: 'Barbearia', slug: 'barbearia' },
+  { pasta: '02 Tabacaria e Roupas', act: 'Tabacaria', slug: 'tabacaria' },
+  { pasta: '03 Celulares e Acessorios', act: 'Celulares', slug: 'celulares' },
+  { pasta: '04 Estudio Tattoo', act: 'Tatuagem', slug: 'tatuagem' }
+];
+const slugNome = s => norm(s).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'sem-nome';
+const pastaTatuador = u => `04 Estudio Tattoo - ${String(u.Nome).replace(/[\\/:*?"<>|]/g, '').trim()}`;
+
+/** Recorte dos dados de uma atividade (ou de um tatuador). Nunca leva PINs. */
+function recorteAtividade(db, act, tatId) {
+  const sem = rows => (rows || []).map(r => ({ ...r }));
+  const users = sem(db.Usuarios).map(({ PIN_Acesso, ...u }) => u);
+  if (!act) return { ...Object.fromEntries(Object.entries(db).map(([t, r]) => [t, sem(r)])), Usuarios: users };
+  const cfgKeys = { Barbearia: ['servicos', 'msg_mensalidade', 'msg_atraso', 'barbearia_pix', 'horario_barbearia', 'empresa'], Tatuagem: ['tipos_tatuagem', 'comissao_master_tattoo', 'tattoo_entrada_pct', 'tattoo_produtos_do_tatuador', 'empresa'] }[act] || ['empresa'];
+  const vendas = sem(db.Vendas_PDV).filter(v => v.Atividade === act && (!tatId || same(v.ID_Usuario, tatId)));
+  const idsV = new Set(vendas.map(v => String(v.ID_Venda)));
+  const out = {
+    Estoque: sem(db.Estoque).filter(p => p.Atividade === act),
+    Vendas_PDV: vendas,
+    Vendas_Itens: sem(db.Vendas_Itens).filter(i => idsV.has(String(i.ID_Venda))),
+    Recebimentos: sem(db.Recebimentos).filter(r => r.Atividade === act && (!tatId || same(r.ID_Usuario, tatId))),
+    Fechamento_Comissoes: sem(db.Fechamento_Comissoes).filter(x => x.Atividade === act && (!tatId || same(x.ID_Profissional, tatId))),
+    Config: sem(db.Config).filter(c => cfgKeys.includes(c.Chave))
+  };
+  if (act === 'Barbearia') {
+    out.Agenda_Barbearia = sem(db.Agenda_Barbearia);
+    out.Mensal_Pagamentos = sem(db.Mensal_Pagamentos);
+    out.Recebimentos = sem(db.Recebimentos).filter(r => r.Atividade === act || r.Tipo === 'Mensalidade');
+    out.Usuarios = users.filter(u => u.Nivel === 'Barbeiro');
+  }
+  if (act === 'Tatuagem') {
+    out.Agenda_Tatuagem = sem(db.Agenda_Tatuagem).filter(a => !tatId || same(a.ID_Tatuador, tatId));
+    out.Tattoo_Pagamentos = sem(db.Tattoo_Pagamentos).filter(p => !tatId || same(p.ID_Tatuador, tatId));
+    out.Tattoo_Repasses = sem(db.Tattoo_Repasses).filter(p => !tatId || same(p.ID_Tatuador, tatId));
+    out.Estoque = out.Estoque.filter(p => !tatId || !p.ID_Dono || same(p.ID_Dono, tatId));
+    out.Config = out.Config.concat(sem(db.Config).filter(c => String(c.Chave).startsWith('tatuador_') && (!tatId || c.Chave === 'tatuador_' + tatId)));
+    out.Usuarios = users.filter(u => tatId ? same(u.ID, tatId) : u.Nivel === 'Tatuador');
+  }
+  const cliIds = new Set(Object.values(out).flat().map(r => r.ID_Cliente).filter(Boolean).map(String));
+  out.Clientes = sem(db.Clientes).filter(c => cliIds.has(String(c.ID)) || (act !== 'Tatuagem' && c.Atividade_Origem === act) || (act === 'Barbearia' && c.Tipo === 'Mensalista'));
+  return out;
+}
+const arquivoBackup = (db, b, tat) => JSON.stringify({
+  sistema: 'Preto Rico', tipo: tat ? 'tatuador' : b.act ? 'atividade' : 'completo',
+  atividade: b.act || 'Todas', tatuador: tat ? { ID: tat.ID, Nome: tat.Nome } : null,
+  exportado: new Date().toISOString(), db: recorteAtividade(db, b.act, tat?.ID)
+}, null, 1);
+/** Lista de arquivos que o backup grava: um por atividade e um por tatuador. */
+function backupsDoDia(db) {
+  const dia = isoDate();
+  const list = BK_PASTAS.map(b => ({ pasta: b.pasta, nome: `preto-rico-${b.slug}-${dia}.json`, texto: () => arquivoBackup(db, b) }));
+  (db.Usuarios || []).filter(u => u.Nivel === 'Tatuador').forEach(u => list.push({
+    pasta: pastaTatuador(u), nome: `preto-rico-tatuador-${slugNome(u.Nome)}-${dia}.json`, texto: () => arquivoBackup(db, BK_PASTAS[4], u)
+  }));
+  return list;
+}
+
 const AutoBackup = (() => {
   const LS_LAST = 'pr_backup_last';
-  const INTERVALO = 6 * 3600 * 1000; // no máximo uma gravação a cada 6 horas
-  const MANTER = 30;
+  const INTERVALO = 3 * 3600 * 1000; // no máximo uma gravação a cada 3 horas (o arquivo do dia é atualizado)
+  const MANTER = 90;
   let estado = { suportado: !!window.showDirectoryPicker, ativo: false, pasta: '', permissao: '', ultimo: 0 };
 
   const idb = () => new Promise((res, rej) => {
@@ -2263,7 +3430,8 @@ const AutoBackup = (() => {
   }
 
   async function ativar() {
-    if (!estado.suportado) throw new Error('Este aparelho não permite backup automático. Use o Google Chrome ou o Edge no computador do caixa.');
+    if (!isMaster()) throw new Error('Só o Master ativa o backup automático.');
+    if (!estado.suportado) throw new Error('Este aparelho não permite backup automático. Use o Google Chrome ou o Edge no computador do Master.');
     const dir = await window.showDirectoryPicker({ id: 'preto-rico-backup', mode: 'readwrite', startIn: 'documents' });
     await kv('readwrite', s => s.put(dir, 'dir'));
     await rodar(true);
@@ -2275,9 +3443,9 @@ const AutoBackup = (() => {
     await status();
   }
 
-  /** Grava o backup do dia. force=true ignora o intervalo e pode pedir permissão (precisa de um toque). */
+  /** Grava os backups do dia. force=true ignora o intervalo e pode pedir permissão (precisa de um toque). */
   async function rodar(force = false) {
-    if (!estado.suportado) return false;
+    if (!estado.suportado || !isMaster()) return false;
     const dir = await getDir();
     if (!dir) return false;
     if (!force && Date.now() - lastRun() < INTERVALO) return false;
@@ -2286,15 +3454,19 @@ const AutoBackup = (() => {
     estado.permissao = perm;
     if (perm !== 'granted') { if (force) throw new Error('O navegador não liberou a pasta de backup.'); return false; }
     if (Api.isRemote()) { try { await Api.sync(); } catch (e) { /* sem internet: grava o que está no aparelho */ } }
-    const nome = `preto-rico-backup-${isoDate()}.json`;
-    const fh = await dir.getFileHandle(nome, { create: true });
-    const w = await fh.createWritable();
-    await w.write(Api.exportJSON());
-    await w.close();
-    // mantém só os mais recentes
-    const arquivos = [];
-    for await (const [n, h] of dir.entries()) if (h.kind === 'file' && /^preto-rico-backup-\d{4}-\d{2}-\d{2}\.json$/.test(n)) arquivos.push(n);
-    arquivos.sort().reverse().slice(MANTER).forEach(n => dir.removeEntry(n).catch(() => {}));
+    const db = Api.snapshot();
+    for (const arq of backupsDoDia(db)) {
+      const sub = await dir.getDirectoryHandle(arq.pasta, { create: true });
+      const fh = await sub.getFileHandle(arq.nome, { create: true });
+      const w = await fh.createWritable();
+      await w.write(arq.texto());
+      await w.close();
+      // mantém só os mais recentes de cada pasta
+      const prefixo = arq.nome.slice(0, -'YYYY-MM-DD.json'.length);
+      const antigos = [];
+      for await (const [n, h] of sub.entries()) if (h.kind === 'file' && n.startsWith(prefixo) && /\d{4}-\d{2}-\d{2}\.json$/.test(n)) antigos.push(n);
+      antigos.sort().reverse().slice(MANTER).forEach(n => sub.removeEntry(n).catch(() => {}));
+    }
     try { localStorage.setItem(LS_LAST, String(Date.now())); } catch (e) { /* sem storage */ }
     estado.ultimo = Date.now();
     return true;
@@ -2305,21 +3477,23 @@ const AutoBackup = (() => {
 
 function autoBackupCard() {
   const e = AutoBackup.estado;
+  const pastas = `<p class="muted small">Dentro da pasta ficam: ${BK_PASTAS.map(b => `<b>${esc(b.pasta)}</b>`).join(', ')} e uma pasta para cada tatuador. Cada arquivo do dia traz tudo até aquele dia; ficam os últimos ${90} dias.</p>`;
   if (!e.suportado) return `<h3>🖥️ Backup automático</h3>
-    <p class="muted">Este aparelho só acessa o sistema pela rede, sem backup local. Para ativar o backup automático, entre como Master no computador do caixa usando Google Chrome ou Edge.</p>`;
+    <p class="muted">Este aparelho não grava backup (celulares só guardam o que está aberto na tela). Para ativar, entre como Master no seu computador usando Google Chrome ou Edge.</p>`;
   if (!e.ativo) return `<h3>🖥️ Backup automático neste computador</h3>
-    <p class="muted">Escolha uma pasta do computador (por exemplo, Documentos › Backup Preto Rico). O sistema grava uma cópia por dia e guarda as últimas 30.</p>
+    <p class="muted">Escolha uma pasta do computador (por exemplo, <b>C:\\SGPR\\backups</b>). O sistema grava sozinho, todo dia, um arquivo por atividade.</p>${pastas}
     <button type="button" class="btn primary big" data-act="bkAtivar">📁 Ativar e escolher a pasta</button>`;
   return `<h3>🖥️ Backup automático neste computador</h3>
-    <p>${badge('Ativo', 'ok')} Pasta: <b>${esc(e.pasta)}</b></p>
+    <p>${badge('Ativo', 'ok')} Pasta: <b>${esc(e.pasta)}</b></p>${pastas}
     <p class="muted small">Último backup: ${e.ultimo ? fmtDate(isoDT(new Date(e.ultimo))) : 'ainda não feito'}${e.permissao !== 'granted' ? ' · o navegador pede para liberar a pasta de novo' : ''}</p>
     <div class="btn-row"><button type="button" class="btn primary" data-act="bkAgora">💾 Fazer backup agora</button>
       <button type="button" class="btn danger-ghost" data-act="bkDesativar">Desativar</button></div>`;
 }
 
-/** Roda em segundo plano ao entrar no sistema; se o navegador pedir, mostra aviso na tela inicial. */
+/** Roda em segundo plano na sessão do Master; se o navegador pedir, mostra aviso na tela inicial. */
 async function autoBackupTick() {
   try {
+    if (!isMaster()) return;
     const st = await AutoBackup.status();
     if (!st.ativo) return;
     if (st.permissao === 'granted') { await AutoBackup.rodar(false); return; }
@@ -2331,6 +3505,27 @@ async function autoBackupTick() {
       }
     }
   } catch (e) { console.warn('Backup automático:', e); }
+}
+
+/** Restaurar um arquivo de backup (geral, de uma atividade ou de um tatuador), no celular ou no PC. */
+async function restaurarArquivo(file) {
+  let j;
+  try { j = JSON.parse(await readFileText(file, 'utf-8')); } catch (e) { throw new Error('Este arquivo não é um backup do Preto Rico.'); }
+  const tables = j.db || j;
+  const contagem = Object.entries(tables).filter(([, r]) => Array.isArray(r) && r.length);
+  if (!contagem.length) throw new Error('O arquivo não tem dados para restaurar.');
+  const desc = j.tatuador ? `do tatuador <b>${esc(j.tatuador.Nome)}</b>` : j.atividade && j.atividade !== 'Todas' ? `da atividade <b>${esc(ACT_LABEL[j.atividade] || j.atividade)}</b>` : '<b>completo</b>';
+  const ok = await confirmModal(`Backup ${desc}${j.exportado ? ` de ${fmtDate(isoDT(new Date(j.exportado)))}` : ''}:<br>
+    <small>${contagem.map(([t, r]) => `${esc(t.replace(/_/g, ' '))}: ${r.length}`).join(' · ')}</small><br><br>
+    O sistema junta estes dados aos atuais: o que já existe é atualizado e o que falta é recriado. Nada é apagado. Senhas (PIN) não vêm do arquivo.`, { ok: '⬆️ Restaurar', title: 'Restaurar backup' });
+  if (!ok) return false;
+  const r = await Api.exec('restaurarBackup', { tables }, { online: true });
+  if (Api.isRemote()) await doSync(false);
+  const res = r?.resumo || r || {};
+  const novos = Object.values(res).reduce((s, x) => s + num(x?.novos), 0), atual = Object.values(res).reduce((s, x) => s + num(x?.atualizados), 0);
+  toast(`Backup restaurado ✔ ${novos} novo(s), ${atual} atualizado(s)`, 'ok');
+  refresh();
+  return true;
 }
 
 /* ==========================================================================
@@ -2346,7 +3541,8 @@ function demoData() {
     P1: ['Tabacaria', 'Essência Zomo 50g', 30, 5, 9, 18], P2: ['Tabacaria', 'Carvão de coco 1kg', 4, 8, 15, 30], P3: ['Tabacaria', 'Seda King Size', 40, 10, 1.2, 3],
     P4: ['Tabacaria', 'Camiseta Preto Rico', 12, 5, 35, 79.9], P5: ['Tabacaria', 'Boné Aba Reta', 2, 4, 28, 69.9], P6: ['Tabacaria', 'Isqueiro Clipper', 25, 10, 4.5, 12],
     P7: ['Celulares', 'Película 3D iPhone', 40, 10, 3, 25], P8: ['Celulares', 'Capinha Silicone', 3, 10, 6, 35], P9: ['Celulares', 'Carregador Turbo 20W', 8, 5, 22, 69.9],
-    P10: ['Celulares', 'Fone Bluetooth TWS', 1, 3, 45, 129.9], P11: ['Celulares', 'Cabo USB-C 1m', 30, 10, 5, 25]
+    P10: ['Celulares', 'Fone Bluetooth TWS', 1, 3, 45, 129.9], P11: ['Celulares', 'Cabo USB-C 1m', 30, 10, 5, 25],
+    P12: ['Barbearia', 'Pomada modeladora', 15, 4, 18, 45], P13: ['Barbearia', 'Óleo para barba', 10, 3, 15, 39.9]
   };
   const estoque = Object.entries(P).map(([ID, [Atividade, Produto, Qtd, Minimo, Preco_Custo, Preco_Venda]]) => ({ ID, Atividade, Produto, Qtd, Minimo, Preco_Custo, Preco_Venda }));
   const venda = (id, dia, hora, user, act, forma, lista, cli) => {
@@ -2372,6 +3568,7 @@ function demoData() {
       { ID: 'U2', Nome: 'João Barbeiro', PIN_Acesso: '1111', Nivel: 'Barbeiro', Modulos_Permitidos: '[]', Status: 'Ativo' },
       { ID: 'U5', Nome: 'Pedro Navalha', PIN_Acesso: '5555', Nivel: 'Barbeiro', Modulos_Permitidos: '[]', Status: 'Ativo' },
       { ID: 'U3', Nome: 'Ana Caixa', PIN_Acesso: '2222', Nivel: 'Caixa', Modulos_Permitidos: '[]', Status: 'Ativo' },
+      { ID: 'U6', Nome: 'Bruno Atendente', PIN_Acesso: '6666', Nivel: 'Caixa', Modulos_Permitidos: '["barbearia","tatuagem","celulares","clientes"]', Status: 'Ativo' },
       { ID: 'U4', Nome: 'Léo Tattoo', PIN_Acesso: '3333', Nivel: 'Tatuador', Modulos_Permitidos: '[]', Status: 'Ativo' }
     ],
     Clientes: [
@@ -2388,9 +3585,9 @@ function demoData() {
       ag('AB7', d(1), '10:30', C2, 'U5', 'Corte', 40, 'Agendado')
     ],
     Agenda_Tatuagem: [
-      { ID: 'AT1', DataHora: `${d(-3)}T14:00`, ID_Cliente: 'C4', Nome_Cliente: 'Diego Alves', ID_Tatuador: 'U4', Descricao_Servico: 'Leão realista antebraço', Valor_Total: 800, Comissao_Master: 240, Status: 'Concluido' },
-      { ID: 'AT2', DataHora: `${d(-1)}T15:00`, ID_Cliente: '', Nome_Cliente: 'Juliana Prado', ID_Tatuador: 'U4', Descricao_Servico: 'Fineline costela', Valor_Total: 350, Comissao_Master: 105, Status: 'Concluido' },
-      { ID: 'AT3', DataHora: `${d(1)}T13:00`, ID_Cliente: 'C2', Nome_Cliente: 'Rafael Souza', ID_Tatuador: 'U4', Descricao_Servico: 'Fechamento de braço (sessão 2)', Valor_Total: 1200, Comissao_Master: 360, Status: 'Agendado' }
+      { ID: 'AT1', DataHora: `${d(-3)}T14:00`, ID_Cliente: 'C4', Nome_Cliente: 'Diego Alves', ID_Tatuador: 'U4', Descricao_Servico: 'Leão realista antebraço', Valor_Total: 800, Comissao_Master: 240, Status: 'Concluido', Tipo: 'Grande (sessão)', Duracao_Min: 300 },
+      { ID: 'AT2', DataHora: `${d(-1)}T15:00`, ID_Cliente: '', Nome_Cliente: 'Juliana Prado', ID_Tatuador: 'U4', Descricao_Servico: 'Fineline costela', Valor_Total: 350, Comissao_Master: 105, Status: 'Concluido', Tipo: 'Pequena / Fine line', Duracao_Min: 90 },
+      { ID: 'AT3', DataHora: `${d(1)}T13:00`, ID_Cliente: 'C2', Nome_Cliente: 'Rafael Souza', ID_Tatuador: 'U4', Descricao_Servico: 'Fechamento de braço (sessão 2)', Valor_Total: 1200, Comissao_Master: 360, Status: 'Agendado', Tipo: 'Grande (sessão)', Duracao_Min: 300 }
     ],
     Estoque: estoque,
     Vendas_PDV: vendas,
@@ -2409,7 +3606,8 @@ function demoData() {
     Config: [
       { Chave: 'servicos', Valor: JSON.stringify(DEFAULT_SERVICOS) },
       { Chave: 'empresa', Valor: JSON.stringify({ nome: 'Preto Rico', doc: '', end: '', tel: '' }) },
-      { Chave: 'comissao_master_tattoo', Valor: '30' }
+      { Chave: 'comissao_master_tattoo', Valor: '30' },
+      { Chave: 'tipos_tatuagem', Valor: JSON.stringify(DEFAULT_TIPOS_TATTOO) }
     ]
   };
 }
@@ -2447,13 +3645,14 @@ function init() {
   $('#login-cfg').onclick = serverConfigModal;
   $$('[data-receipt-close]').forEach(b => { b.onclick = closeReceipt; });
   $('#receipt-print').onclick = () => printNow($('#receipt').innerHTML);
+  $('#receipt-pdf').onclick = () => run(() => baixarPDF($('#receipt').innerHTML, $('#receipt-modal .modal-title').textContent), 'PDF salvo ✔');
   $('#receipt-modal').addEventListener('mousedown', e => { if (e.target.id === 'receipt-modal') closeReceipt(); });
 
   window.addEventListener('hashchange', route);
   window.addEventListener('online', () => { updateSync(); doSync(true); });
   window.addEventListener('offline', updateSync);
   Api.onChange(info => {
-    if (info.type === 'session-expired') { toast('Sua sessão expirou. Entre novamente.', 'warn'); logout(); }
+    if (info.type === 'session-expired') { toast(info.blocked ? 'Seu acesso foi desativado pelo Master. Fale com o dono.' : 'Sua sessão expirou. Entre novamente.', info.blocked ? 'danger' : 'warn'); if (S.user) logout(); }
     if (S.user) updateSync();
   });
   // sincronização periódica (a cada 2 minutos) quando conectado

@@ -3,11 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0b0b">
+  <meta name="theme-color" content="#111111">
   <meta name="description" content="Preto Rico — Gestão integrada: Barbearia, Tabacaria & Roupas, Celulares & Acessórios e Estúdio de Tatuagem.">
   <title>Preto Rico · Gestão</title>
-  <link rel="icon" href="logo.png">
-  <link rel="apple-touch-icon" href="logo.png">
+  <!-- PWA: instalação como app (ícone, manifest, iPhone) -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Preto Rico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -85,8 +92,10 @@
           <div class="tabs" role="tablist">
             <button type="button" class="tab" data-tab="lancar">✂️ Lançar corte</button>
             <button type="button" class="tab" data-tab="agenda">📅 Agenda</button>
-            <button type="button" class="tab" data-tab="mensalistas" data-roles="Master">⭐ Mensalistas</button>
-            <button type="button" class="tab" data-tab="relatorio">💵 Comissões</button>
+            <button type="button" class="tab" data-tab="mensalistas" data-roles="Master,Caixa">⭐ Mensalistas</button>
+            <button type="button" class="tab" data-tab="vender" data-roles="Master,Caixa">🛒 Vender</button>
+            <button type="button" class="tab" data-tab="estoque" data-roles="Master,Caixa">📦 Estoque</button>
+            <button type="button" class="tab" data-tab="relatorio" data-roles="Master,Barbeiro">💵 Comissões</button>
             <button type="button" class="tab" data-tab="servicos" data-roles="Master">🧾 Serviços e preços</button>
           </div>
           <div class="view-body"></div>
@@ -118,7 +127,14 @@
         <section class="view" id="view-tatuagem" data-title="Estúdio de Tatuagem" hidden>
           <div class="tabs" role="tablist">
             <button type="button" class="tab" data-tab="agenda">📅 Agenda</button>
-            <button type="button" class="tab" data-tab="fechamento">💵 Fechamento</button>
+            <button type="button" class="tab" data-tab="pagamentos">💳 Pagamentos</button>
+            <button type="button" class="tab" data-tab="loja" data-roles="Master,Tatuador">🛍️ Meus produtos</button>
+            <button type="button" class="tab" data-tab="estoque" data-roles="Master,Tatuador">📦 Estoque</button>
+            <button type="button" class="tab" data-tab="avisos">📲 Avisos ao cliente</button>
+            <button type="button" class="tab" data-tab="repasses" data-roles="Master,Tatuador">🤝 Repasses ao Master</button>
+            <button type="button" class="tab" data-tab="fechamento" data-roles="Master,Tatuador">💵 Fechamento</button>
+            <button type="button" class="tab" data-tab="relatorios" data-roles="Master,Tatuador">📊 Relatórios</button>
+            <button type="button" class="tab" data-tab="tipos" data-roles="Master">🎨 Tipos e % (Master)</button>
           </div>
           <div class="view-body"></div>
         </section>
@@ -199,7 +215,8 @@
       </div>
       <footer class="modal-foot">
         <button type="button" class="btn ghost" data-receipt-close>Fechar</button>
-        <button type="button" class="btn primary big" id="receipt-print">🖨️ Imprimir / PDF</button>
+        <button type="button" class="btn" id="receipt-pdf">📄 Baixar PDF</button>
+        <button type="button" class="btn primary big" id="receipt-print">🖨️ Imprimir</button>
       </footer>
     </div>
   </div>
@@ -213,7 +230,11 @@
   <!-- Sugestões de clientes para campos de nome -->
   <datalist id="dl-clientes"></datalist>
 
+  <!-- Servidor padrão (planilha do Preto Rico): os aparelhos já entram conectados -->
+  <script src="config.js"></script>
   <script src="api.js"></script>
   <script src="app.js"></script>
+  <!-- PWA: service worker + botão "Instalar app" -->
+  <script src="pwa.js"></script>
 </body>
 </html>

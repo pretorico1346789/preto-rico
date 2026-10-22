@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+  <meta name="description" content="Área do mensalista da barbearia Preto Rico: marque seu horário e pague a mensalidade.">
+  <title>Mensalista · Preto Rico</title>
+  <link rel="icon" href="./favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .ag-pub { max-width: 640px; margin: 0 auto; padding: 1rem 1rem 3rem; }
+    .ag-pub header { display: flex; align-items: center; gap: .8rem; margin: .4rem 0 1rem; }
+    .ag-pub header img { width: 56px; height: 56px; border-radius: 12px; }
+    .ag-pub h1 { font-size: 1.3rem; margin: 0; }
+    .ag-pub h2 { font-size: 1.05rem; margin: 0 0 .7rem; }
+    .ag-steps { display: flex; gap: .3rem; margin-bottom: 1rem; }
+    .ag-steps i { flex: 1; height: 6px; border-radius: 3px; background: var(--border); }
+    .ag-steps i.on { background: var(--gold); }
+    .ag-opt { display: block; width: 100%; text-align: left; padding: .9rem 1rem; margin-bottom: .5rem; border-radius: 14px; border: 2px solid var(--border); background: var(--surface-2, var(--surface)); color: inherit; font: inherit; cursor: pointer; }
+    .ag-opt.sel, .ag-opt:hover { border-color: var(--gold); }
+    .ag-opt b { display: block; font-size: 1.05rem; }
+    .ag-opt small { color: var(--text-2); }
+    .ag-days { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .4rem; }
+    .ag-day { flex: 0 0 auto; min-width: 70px; padding: .6rem .5rem; border-radius: 12px; border: 2px solid var(--border); background: var(--surface); color: inherit; font: inherit; text-align: center; cursor: pointer; }
+    .ag-day.sel { border-color: var(--gold); background: rgba(255,194,14,.15); }
+    .ag-day[disabled] { opacity: .35; cursor: default; }
+    .ag-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: .4rem; margin-top: .8rem; }
+    .ag-slot { padding: .7rem 0; border-radius: 12px; border: 2px solid var(--border); background: var(--surface); color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+    .ag-slot.sel { border-color: var(--gold); background: var(--gold); color: #111; }
+    .ag-pix { font-size: 1.1rem; word-break: break-all; padding: .8rem; border-radius: 12px; background: var(--surface); border: 1px dashed var(--gold); }
+    .ag-aviso { white-space: pre-wrap; padding: .8rem 1rem; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); margin-bottom: .6rem; }
+    .ag-nav { display: flex; gap: .6rem; margin-top: 1.2rem; }
+    .ag-nav .btn { flex: 1; }
+    .ag-resumo { line-height: 1.7; }
+    .ag-file { display: block; padding: 1.2rem; text-align: center; border: 2px dashed var(--border); border-radius: 14px; cursor: pointer; }
+    .ag-file.ok { border-color: var(--ok); }
+    .ag-slot.ocup { opacity: .45; cursor: default; text-decoration: line-through; font-weight: 500; }
+    .ag-slot small { display: block; font-size: .7rem; font-weight: 500; text-decoration: none; }
+    .ag-day small.n { display: block; font-size: .7rem; color: var(--ok); }
+    .ag-day.lotado small.n { color: var(--danger); }
+    .mn-big { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin: 1rem 0; }
+    .mn-big .btn { min-height: 92px; font-size: 1.05rem; flex-direction: column; }
+    .mn-big .btn span { font-size: 1.8rem; display: block; }
+    .mn-st { display: flex; justify-content: space-between; align-items: center; gap: .6rem; flex-wrap: wrap; }
+    .mn-list > div { padding: .6rem 0; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: .6rem; }
+    .legenda { display: flex; gap: 1rem; font-size: .85rem; margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  <main class="ag-pub">
+    <header><img src="logo.png" alt="Preto Rico"><div><h1>Área do mensalista</h1><div class="muted" id="ag-sub">Barbearia Preto Rico</div></div></header>
+    <div id="ag-app"><div class="card"><p>Carregando...</p></div></div>
+  </main>
+  <script src="config.js"></script>
+  <script src="mensalista.js"></script>
+</body>
+</html>

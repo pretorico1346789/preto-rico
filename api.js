@@ -21,7 +21,7 @@ const Api = (() => {
   const TABLES = {
     Usuarios: 'ID', Clientes: 'ID', Agenda_Barbearia: 'ID', Agenda_Tatuagem: 'ID',
     Estoque: 'ID', Vendas_PDV: 'ID_Venda', Vendas_Itens: null, Financeiro_Contas: 'ID',
-    Fechamento_Comissoes: 'ID', Recebimentos: 'ID', Conciliacao: 'ID', Config: 'Chave'
+    Fechamento_Comissoes: 'ID', Recebimentos: 'ID', Conciliacao: 'ID', Config: 'Chave', Tattoo_Pagamentos: 'ID', Tattoo_Repasses: 'ID', Mensal_Pagamentos: 'ID'
   };
 
   /* ---------- Persistência local ---------- */
@@ -32,7 +32,14 @@ const Api = (() => {
     try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { console.warn('localStorage indisponível', e); }
   };
 
-  let cfg = read(LS.cfg, { url: '', k: '' });
+  // Servidor padrão vem do config.js (window.PRETO_RICO_SERVIDOR). "Configurar servidor"
+  // na tela de login grava outro endereço só para aquele aparelho.
+  const DEFAULT_CFG = {
+    url: String((window.PRETO_RICO_SERVIDOR || {}).url || '').trim(),
+    k: String((window.PRETO_RICO_SERVIDOR || {}).k || '').trim()
+  };
+  let cfg = read(LS.cfg, DEFAULT_CFG);
+  if (!cfg.url && DEFAULT_CFG.url) cfg = { ...DEFAULT_CFG };
   let db = read(LS.db, {});
   let queue = read(LS.queue, []);
   let session = read(LS.session, null);
@@ -84,6 +91,13 @@ const Api = (() => {
 
   const findBy = (t, id) => table(t).find(r => same(r[TABLES[t]], id));
   const currentUser = () => session && session.user;
+  const parseList = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.map(String) : []; } catch (e) { return []; } };
+  const TATTOO_CONTROLE = ['Inicio_Real', 'Fim_Real', 'Tempo_Min', 'Criado_Por', 'Alterado_Por', 'Alterado_Em', 'Alteracao', 'Visto_Por'];
+  /** Mesmo controle de avisos do servidor (versão local/offline). */
+  function marcaAviso(row, texto) {
+    const u = currentUser() || {};
+    Object.assign(row, { Alterado_Por: u.ID || '', Alterado_Em: nowIso(), Alteracao: `${texto} — por ${u.Nome || ''}`, Visto_Por: JSON.stringify([String(u.ID || '')]) });
+  }
 
   /* ---------- Ações locais (modo offline/demo) — espelham o Codigo.gs ---------- */
   const Local = {
@@ -141,9 +155,85 @@ const Api = (() => {
     },
 
     salvarAgendamento(p) {
-      const t = p.tipo === 'tatuagem' ? 'Agenda_Tatuagem' : 'Agenda_Barbearia';
+      const tat = p.tipo === 'tatuagem';
+      const t = tat ? 'Agenda_Tatuagem' : 'Agenda_Barbearia';
       if (!p.row.DataHora) throw new ApiError('Informe data e hora.');
-      return { tipo: p.tipo, row: localUpsert(t, { ...p.row }) };
+      const row = { ...p.row };
+      if (tat) {
+        TATTOO_CONTROLE.forEach(k => delete row[k]);
+        const ex = row.ID ? findBy(t, row.ID) : null;
+        if (!row.ID_Tatuador && !ex?.ID_Tatuador) throw new ApiError('Escolha o tatuador.');
+        if (!ex) { row.Criado_Por = currentUser()?.ID || ''; marcaAviso(row, 'Sessão agendada'); }
+        else if (['DataHora', 'Valor_Total', 'Status', 'Duracao_Min', 'ID_Tatuador', 'Tipo'].some(k => row[k] !== undefined && String(row[k] ?? '') !== String(ex[k] ?? ''))) marcaAviso(row, 'Sessão alterada');
+      }
+      else {
+        const ex = row.ID ? findBy(t, row.ID) : null;
+        if (!ex) { row.Origem = 'Balcão'; row.Criado_Por = currentUser()?.ID || ''; }
+        if (row.Mensalista === 'Sim') {
+          const c = findBy('Clientes', row.ID_Cliente);
+          if (!c || c.Tipo !== 'Mensalista') throw new ApiError('Escolha o mensalista.');
+          row.Nome_Cliente = c.Nome;
+        }
+      }
+      return { tipo: p.tipo, row: localUpsert(t, row) };
+    },
+
+    marcarSessao(p) {
+      const s = findBy('Agenda_Tatuagem', p.id);
+      if (!s) throw new ApiError('Sessão não encontrada.');
+      const quando = p.quando || nowIso();
+      if (p.evento === 'inicio') Object.assign(s, { Inicio_Real: quando, Fim_Real: '', Tempo_Min: '', Status: 'Em andamento' });
+      else {
+        const ini = p.inicio || s.Inicio_Real || quando;
+        Object.assign(s, { Inicio_Real: ini, Fim_Real: quando, Tempo_Min: Math.max(0, Math.round((new Date(quando + ':00') - new Date(ini + ':00')) / 60000)), Status: 'Concluido' });
+      }
+      marcaAviso(s, p.evento === 'inicio' ? 'Serviço iniciado' : 'Serviço executado');
+      return { row: s };
+    },
+
+    vistoAviso(p) {
+      const s = findBy('Agenda_Tatuagem', p.id);
+      if (!s) throw new ApiError('Sessão não encontrada.');
+      const v = parseList(s.Visto_Por);
+      const me = String(currentUser()?.ID || '');
+      if (!v.includes(me)) v.push(me);
+      s.Visto_Por = JSON.stringify(v);
+      return { row: s };
+    },
+
+    salvarPagamentoTattoo(p) {
+      const lista = p.rows || (p.row ? [p.row] : []);
+      if (!lista.length) throw new ApiError('Nenhum pagamento informado.');
+      const s = findBy('Agenda_Tatuagem', lista[0].ID_Sessao);
+      if (!s) throw new ApiError('Sessão não encontrada.');
+      const rows = lista.map(r0 => {
+        const r = { ...r0, ID: r0.ID || uid('TP'), ID_Tatuador: s.ID_Tatuador, Nome_Cliente: s.Nome_Cliente, Valor: r2(num(r0.Valor)) };
+        if (!['Aberto', 'Pago', 'Cancelado'].includes(r.Status)) r.Status = 'Aberto';
+        if (r.Status !== 'Cancelado' && r.Valor <= 0) throw new ApiError('Valor da parcela inválido.');
+        r.Data_Pagamento = r.Status === 'Pago' ? (r.Data_Pagamento || nowIso().slice(0, 10)) : '';
+        r.Lancado_Por = currentUser()?.ID || '';
+        return localUpsert('Tattoo_Pagamentos', r);
+      });
+      p.rows = rows.map(r => ({ ...r })); // mantém os IDs na fila de sincronização
+      delete p.row;
+      marcaAviso(s, 'Pagamento lançado');
+      return { rows };
+    },
+
+    restaurarBackup(p) {
+      const resumo = {};
+      Object.entries(p.tables || {}).forEach(([t, rows]) => {
+        if (!(t in TABLES) || !Array.isArray(rows)) return;
+        const key = TABLES[t];
+        let novos = 0, atualizados = 0;
+        rows.forEach(r => {
+          if (!key) { db[t].push({ ...r }); novos++; return; }
+          if (findBy(t, r[key])) atualizados++; else novos++;
+          localUpsert(t, { ...r });
+        });
+        resumo[t] = { novos, atualizados };
+      });
+      return { resumo };
     },
 
     darBaixaConta(p) {
@@ -214,7 +304,36 @@ const Api = (() => {
     salvarConfig(p) {
       const Valor = typeof p.Valor === 'string' ? p.Valor : JSON.stringify(p.Valor);
       return { row: localUpsert('Config', { Chave: p.Chave, Valor }) };
-    }
+    },
+
+    salvarPerfilTatuador(p) {
+      const u = currentUser() || {};
+      const id = u.Nivel === 'Tatuador' ? u.ID : p.ID_Tatuador;
+      if (!id) throw new ApiError('Tatuador não encontrado.');
+      return { row: localUpsert('Config', { Chave: 'tatuador_' + id, Valor: JSON.stringify(p.perfil || {}) }) };
+    },
+
+    salvarRepasse(p) {
+      const u = currentUser() || {};
+      const r = { ...p.row };
+      const ex = r.ID ? findBy('Tattoo_Repasses', r.ID) : null;
+      if (u.Nivel !== 'Master') {
+        if (ex && ex.Status === 'Confirmado') throw new ApiError('Repasse já confirmado pelo Master. Peça a ele para alterar.');
+        r.ID_Tatuador = u.ID;
+        r.Status = r.Status === 'Cancelado' ? 'Cancelado' : 'Informado';
+      } else if (r.Status === 'Confirmado' && !(ex && ex.Status === 'Confirmado')) Object.assign(r, { Confirmado_Por: u.ID, Confirmado_Em: nowIso() });
+      if (!/^\d{4}-\d{2}$/.test(String(r.Mes || ex?.Mes || ''))) throw new ApiError('Informe o mês da comissão.');
+      if (r.Status !== 'Cancelado' && num(r.Valor ?? ex?.Valor) <= 0) throw new ApiError('Informe o valor repassado.');
+      r.ID = r.ID || uid('RP');
+      p.row = { ...r }; // mantém o ID na fila de sincronização
+      r.Lancado_Por = ex ? ex.Lancado_Por : u.ID;
+      r.Data = r.Data || nowIso().slice(0, 10);
+      return { row: localUpsert('Tattoo_Repasses', r) };
+    },
+
+    verComprovante() { throw new ApiError('O comprovante só abre com internet.'); },
+    linkMensalista() { throw new ApiError('O link do mensalista só é gerado com internet.'); },
+    conferirPagamentoMensal() { throw new ApiError('A conferência do Pix só funciona com internet.'); }
   };
 
   /* ---------- HTTP ---------- */
@@ -223,7 +342,7 @@ const Api = (() => {
     let j;
     try { j = await res.json(); } catch (e) { throw new Error('Resposta inválida do servidor. Confira a URL /exec.'); }
     if (!j.ok) {
-      if (/Sess[aã]o (expirada|inv[aá]lida)/i.test(j.error || '')) emit({ type: 'session-expired' });
+      if (/Sess[aã]o (expirada|inv[aá]lida)|Usu[aá]rio inativo/i.test(j.error || '')) emit({ type: 'session-expired', blocked: /inativo/i.test(j.error || '') });
       throw new ApiError(j.error || 'Erro no servidor');
     }
     return j.data;
@@ -246,7 +365,7 @@ const Api = (() => {
   /* ---------- API pública ---------- */
 
   /** Executa uma ação de escrita (online, enfileirada ou local). */
-  async function exec(action, payload = {}) {
+  async function exec(action, payload = {}, opts = {}) {
     if (!Local[action]) throw new Error('Ação desconhecida: ' + action);
     if (isRemote()) {
       try {
@@ -256,6 +375,7 @@ const Api = (() => {
         return data.result;
       } catch (e) {
         if (e instanceof ApiError) throw e;
+        if (opts.online) throw new ApiError('Sem internet. Conecte-se e tente de novo.');
         // Falha de rede: aplica localmente e guarda para enviar depois
         const res = Local[action](payload);
         queue.push({ action, payload, ts: Date.now() });
@@ -277,6 +397,7 @@ const Api = (() => {
       try { await httpPost(op.action, op.payload); }
       catch (e) {
         if (!(e instanceof ApiError)) throw e; // ainda sem conexão: mantém a fila
+        if (/Sess[aã]o|inativo/i.test(e.message)) throw e; // precisa entrar de novo: a fila fica guardada
         errors.push(`${op.action}: ${e.message}`);
       }
       queue.shift(); write(LS.queue, queue);
@@ -306,7 +427,12 @@ const Api = (() => {
     return session.user;
   }
 
-  function logout() { session = null; try { localStorage.removeItem(LS.session); } catch (e) { /* sem storage */ } }
+  /** Ao sair, no modo conectado, o aparelho não guarda os dados: só a fila do que ainda não foi enviado. */
+  function logout() {
+    session = null;
+    try { localStorage.removeItem(LS.session); } catch (e) { /* sem storage */ }
+    if (isRemote()) { Object.keys(TABLES).forEach(t => { db[t] = []; }); try { localStorage.removeItem(LS.db); } catch (e) { /* sem storage */ } }
+  }
 
   /** Valida PIN Master para desconto; devolve token de autorização. */
   async function validarPin(pin) {
@@ -346,6 +472,7 @@ const Api = (() => {
       persist(); return true;
     },
     exportJSON: () => JSON.stringify({ exportado: new Date().toISOString(), db }, null, 2),
+    snapshot: () => JSON.parse(JSON.stringify(db)),
     importJSON(text) {
       const j = JSON.parse(text);
       const src = j.db || j;

@@ -384,6 +384,37 @@ input[type="checkbox"] { width: 22px; min-height: 22px; height: 22px; accent-col
 .week-col .ag-item { grid-template-columns: 1fr; gap: .2rem; padding: .6rem; font-size: .88rem; }
 .week-col .ag-time { font-size: 1rem; }
 
+/* ---------- Calendário semanal por horário (Estúdio Tattoo) ---------- */
+.wk-title { font-weight: 700; color: var(--text-2); }
+.wk-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); -webkit-overflow-scrolling: touch; }
+.wk { display: grid; grid-template-columns: 52px repeat(7, minmax(110px, 1fr)); min-width: 820px; }
+.wk-corner, .wk-head { position: sticky; top: 0; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--border); }
+.wk-head { padding: .55rem .4rem; text-align: center; font-weight: 700; font-size: .82rem; text-transform: capitalize; color: var(--text-2); border-left: 1px solid var(--border); }
+.wk-head.today { color: var(--gold); box-shadow: inset 0 -3px 0 var(--gold); }
+.wk-corner { position: sticky; left: 0; z-index: 4; }
+.wk-times { position: sticky; left: 0; z-index: 2; background: var(--surface); }
+.wk-times div { font-size: .7rem; color: var(--text-3); text-align: right; padding: 2px 6px 0 0; box-sizing: border-box; }
+.wk-day {
+  position: relative; height: var(--wk-h); border-left: 1px solid var(--border); cursor: pointer;
+  background-image: linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 100% calc(var(--wk-slot) * 2);
+}
+.wk-day:not([data-act]) { cursor: default; }
+.wk-day.today { background-color: rgba(255, 194, 14, .06); }
+.wk-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--danger); z-index: 1; pointer-events: none; }
+.wk-ev {
+  position: absolute; z-index: 2; overflow: hidden; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: 1px; padding: 3px 6px; border-radius: 8px;
+  font: 500 .74rem/1.25 var(--font); color: var(--text);
+  background: var(--info-soft); border: 1px solid var(--info); border-left: 4px solid var(--info);
+}
+.wk-ev b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-ev span { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-ev.Concluido { background: var(--ok-soft); border-color: var(--ok); }
+.wk-ev.Cancelado { background: var(--danger-soft); border-color: var(--danger); opacity: .6; text-decoration: line-through; }
+.wk-ev:hover, .wk-ev:focus-visible { filter: brightness(1.15); outline: 2px solid var(--gold); outline-offset: 0; }
+@media print { .wk-wrap { overflow: visible; } }
+
 /* ---------- Barras (gráfico simples) ---------- */
 .bars { display: flex; align-items: flex-end; gap: 6px; height: 180px; padding-top: 1rem; }
 .bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; min-width: 0; }
@@ -537,3 +568,11 @@ input[type="checkbox"] { width: 22px; min-height: 22px; height: 22px; accent-col
   #print-area .report { max-width: none; padding: 0; }
   #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Tatuagem: sessão em andamento e avisos de alteração */
+.ag-item.Andamento { border-left: 5px solid var(--warn); }
+.wk-ev.Andamento { background: var(--warn-soft); border-color: var(--warn); }
+.ag-item.has-aviso { box-shadow: 0 0 0 2px var(--danger) inset; }
+.aviso-card { border: 2px solid var(--danger); }
+.ag-item.Solicitado { border-left: 5px solid var(--gold); }
+.wk-ev.Solicitado { background: rgba(255, 194, 14, .18); border-color: var(--gold); border-style: dashed; }
